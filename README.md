@@ -2,6 +2,10 @@
 
 ### FastAPI + LangGraph + MCP + Multi-Agent AI Architecture
 
+### command to start the server => python -m apps.agent_runtime.grpc_runtime.server.server
+
+
+
 Enterprise-grade scalable AI agent platform built using:
 
 * FastAPI
@@ -991,3 +995,316 @@ Final Response
 # License
 
 Enterprise AI Platform Architecture
+
+
+# Revised Folder Structure Explained
+### Here Revised Orchestratation Folder Structure
+
+```text
+project-root/
+│
+├── apps/
+│
+│   ├── api-gateway/
+│   │
+│   │   ├── routes/
+│   │   ├── controllers/
+│   │   ├── middleware/
+│   │   ├── websocket/
+│   │   ├── dependencies/
+│   │   ├── grpc/
+│   │   ├── config/
+│   │   ├── utils/
+│   │   └── main.py
+│   │
+│   ├── agent-runtime/
+│   │
+│   │   ├── agents/
+│   │   │
+│   │   │   ├── supervisor/
+│   │   │   │   ├── intent_classifier.py
+│   │   │   │   ├── graph_router.py
+│   │   │   │   ├── orchestration_manager.py
+│   │   │   │   └── escalation_handler.py
+│   │   │   │
+│   │   │   ├── planner/
+│   │   │   │   ├── planner_agent.py
+│   │   │   │   ├── decomposition.py
+│   │   │   │   └── reasoning.py
+│   │   │   │
+│   │   │   ├── executor/
+│   │   │   │   ├── executor.py
+│   │   │   │   ├── sequential_executor.py
+│   │   │   │   ├── parallel_executor.py
+│   │   │   │   ├── retry_handler.py
+│   │   │   │   └── fallback_handler.py
+│   │   │   │
+│   │   │   ├── validator/
+│   │   │   │   ├── schema_validator.py
+│   │   │   │   ├── hallucination_guard.py
+│   │   │   │   ├── output_validator.py
+│   │   │   │   └── permission_validator.py
+│   │   │   │
+│   │   │   ├── retrieval/
+│   │   │   │   ├── retriever.py
+│   │   │   │   ├── reranker.py
+│   │   │   │   └── context_builder.py
+│   │   │   │
+│   │   │   ├── memory/
+│   │   │   │   ├── memory_loader.py
+│   │   │   │   ├── memory_updater.py
+│   │   │   │   └── checkpoint_manager.py
+│   │   │   │
+│   │   │   ├── approval/
+│   │   │   │   ├── approval_manager.py
+│   │   │   │   ├── escalation.py
+│   │   │   │   └── wait_state.py
+│   │   │   │
+│   │   │   └── analytics/
+│   │   │       ├── token_usage.py
+│   │   │       ├── latency_tracker.py
+│   │   │       └── workflow_metrics.py
+│   │   │
+│   │   ├── graphs/
+│   │   │
+│   │   │   ├── supervisor_graph/
+│   │   │   │   ├── graph.py
+│   │   │   │   ├── routes.py
+│   │   │   │   ├── edges.py
+│   │   │   │   └── state_handler.py
+│   │   │   │
+│   │   │   ├── erp_graph/
+│   │   │   │   ├── graph.py
+│   │   │   │   ├── workflow.py
+│   │   │   │   ├── routes.py
+│   │   │   │   └── edges.py
+│   │   │   │
+│   │   │   ├── support_graph/
+│   │   │   │   ├── graph.py
+│   │   │   │   ├── workflow.py
+│   │   │   │   └── edges.py
+│   │   │   │
+│   │   │   ├── automation_graph/
+│   │   │   │   ├── graph.py
+│   │   │   │   ├── workflow.py
+│   │   │   │   └── edges.py
+│   │   │   │
+│   │   │   └── common/
+│   │   │       ├── base_graph.py
+│   │   │       ├── graph_builder.py
+│   │   │       └── shared_edges.py
+│   │   │
+│   │   ├── nodes/
+│   │   │
+│   │   │   ├── planning/
+│   │   │   │   ├── planner_node.py
+│   │   │   │   ├── decomposition_node.py
+│   │   │   │   └── reasoning_node.py
+│   │   │   │
+│   │   │   ├── reasoning/
+│   │   │   │   ├── intent_node.py
+│   │   │   │   ├── reflection_node.py
+│   │   │   │   └── routing_node.py
+│   │   │   │
+│   │   │   ├── execution/
+│   │   │   │   ├── entity_resolver.py
+│   │   │   │   ├── clarification_node.py
+│   │   │   │   ├── tool_selector.py
+│   │   │   │   ├── executor_node.py
+│   │   │   │   ├── retry_node.py
+│   │   │   │   ├── fallback_node.py
+│   │   │   │   └── parallel_execution.py
+│   │   │   │
+│   │   │   ├── retrieval/
+│   │   │   │   ├── retrieval_node.py
+│   │   │   │   ├── rerank_node.py
+│   │   │   │   └── context_node.py
+│   │   │   │
+│   │   │   ├── approval/
+│   │   │   │   ├── approval_node.py
+│   │   │   │   ├── human_loop_node.py
+│   │   │   │   └── escalation_node.py
+│   │   │   │
+│   │   │   ├── memory/
+│   │   │   │   ├── load_memory.py
+│   │   │   │   ├── save_memory.py
+│   │   │   │   └── checkpoint_node.py
+│   │   │   │
+│   │   │   ├── validation/
+│   │   │   │   ├── schema_validation.py
+│   │   │   │   ├── hallucination_check.py
+│   │   │   │   ├── permission_check.py
+│   │   │   │   └── response_validation.py
+│   │   │   │
+│   │   │   └── formatting/
+│   │   │       ├── response_formatter.py
+│   │   │       ├── stream_formatter.py
+│   │   │       └── ui_response_builder.py
+│   │   │
+│   │   ├── state/
+│   │   │   ├── graph_state.py
+│   │   │   ├── workflow_state.py
+│   │   │   ├── execution_state.py
+│   │   │   └── memory_state.py
+│   │   │
+│   │   ├── tools/
+│   │   │
+│   │   │   ├── registry/
+│   │   │   │   ├── tool_registry.py
+│   │   │   │   ├── tool_permissions.py
+│   │   │   │   ├── tool_metadata.py
+│   │   │   │   └── tool_schemas.py
+│   │   │   │
+│   │   │   ├── adapters/
+│   │   │   │   ├── crm_adapter.py
+│   │   │   │   ├── slack_adapter.py
+│   │   │   │   ├── gmail_adapter.py
+│   │   │   │   └── jira_adapter.py
+│   │   │   │
+│   │   │   └── wrappers/
+│   │   │       ├── response_wrapper.py
+│   │   │       ├── schema_wrapper.py
+│   │   │       └── normalization_wrapper.py
+│   │   │
+│   │   ├── mcp/
+│   │   │
+│   │   │   ├── client/
+│   │   │   │   ├── mcp_client.py
+│   │   │   │   ├── connection_pool.py
+│   │   │   │   ├── retry_client.py
+│   │   │   │   └── timeout_handler.py
+│   │   │   │
+│   │   │   ├── transport/
+│   │   │   │   ├── http_transport.py
+│   │   │   │   ├── websocket_transport.py
+│   │   │   │   └── grpc_transport.py
+│   │   │   │
+│   │   │   ├── discovery/
+│   │   │   │   ├── tool_discovery.py
+│   │   │   │   ├── capability_loader.py
+│   │   │   │   └── registry_sync.py
+│   │   │   │
+│   │   │   └── schemas/
+│   │   │       ├── request_schema.py
+│   │   │       ├── response_schema.py
+│   │   │       └── tool_schema.py
+│   │   │
+│   │   ├── memory/
+│   │   │
+│   │   │   ├── short_term/
+│   │   │   │   ├── redis_memory.py
+│   │   │   │   └── session_memory.py
+│   │   │   │
+│   │   │   ├── long_term/
+│   │   │   │   ├── postgres_memory.py
+│   │   │   │   └── persistent_memory.py
+│   │   │   │
+│   │   │   ├── semantic/
+│   │   │   │   ├── semantic_search.py
+│   │   │   │   └── semantic_store.py
+│   │   │   │
+│   │   │   ├── vector/
+│   │   │   │   ├── qdrant_store.py
+│   │   │   │   └── embedding_manager.py
+│   │   │   │
+│   │   │   ├── checkpoints/
+│   │   │   │   ├── workflow_checkpoint.py
+│   │   │   │   ├── graph_resume.py
+│   │   │   │   └── pause_manager.py
+│   │   │   │
+│   │   │   └── session/
+│   │   │       ├── conversation_session.py
+│   │   │       └── session_manager.py
+│   │   │
+│   │   ├── rag/
+│   │   │   ├── ingestion/
+│   │   │   ├── chunking/
+│   │   │   ├── embeddings/
+│   │   │   ├── retrievers/
+│   │   │   ├── rerankers/
+│   │   │   ├── vectorstores/
+│   │   │   └── pipelines/
+│   │   │
+│   │   ├── llms/
+│   │   │
+│   │   │   ├── openai/
+│   │   │   ├── anthropic/
+│   │   │   ├── gemini/
+│   │   │   └── router/
+│   │   │       ├── model_router.py
+│   │   │       ├── fallback_router.py
+│   │   │       └── cost_optimizer.py
+│   │   │
+│   │   ├── prompts/
+│   │   │
+│   │   ├── observability/
+│   │   │
+│   │   │   ├── logging/
+│   │   │   │   ├── structured_logger.py
+│   │   │   │   └── execution_logger.py
+│   │   │   │
+│   │   │   ├── tracing/
+│   │   │   │   ├── graph_trace.py
+│   │   │   │   └── workflow_trace.py
+│   │   │   │
+│   │   │   ├── metrics/
+│   │   │   │   ├── token_metrics.py
+│   │   │   │   ├── latency_metrics.py
+│   │   │   │   └── execution_metrics.py
+│   │   │   │
+│   │   │   └── langsmith/
+│   │   │       ├── langsmith_client.py
+│   │   │       └── trace_uploader.py
+│   │   │
+│   │   ├── governance/
+│   │   │   ├── policy_engine.py
+│   │   │   ├── risk_manager.py
+│   │   │   └── compliance_checker.py
+│   │   │
+│   │   ├── safety/
+│   │   │   ├── prompt_injection_guard.py
+│   │   │   ├── unsafe_tool_guard.py
+│   │   │   ├── execution_guard.py
+│   │   │   └── hallucination_prevention.py
+│   │   │
+│   │   ├── streaming/
+│   │   │   ├── websocket_stream.py
+│   │   │   ├── token_stream.py
+│   │   │   ├── progress_stream.py
+│   │   │   └── event_stream.py
+│   │   │
+│   │   ├── evaluators/
+│   │   │   ├── workflow_evaluator.py
+│   │   │   ├── response_evaluator.py
+│   │   │   └── execution_evaluator.py
+│   │   │
+│   │   ├── config/
+│   │   │
+│   │   ├── constants/
+│   │   │
+│   │   ├── utils/
+│   │   │
+│   │   └── main.py
+│   │
+│   ├── worker/
+│   │
+│   ├── websocket-server/
+│   │
+│   └── admin-dashboard/
+│
+├── services/
+│
+├── packages/
+│
+├── infrastructure/
+│
+├── tests/
+│
+├── scripts/
+│
+├── docs/
+│
+├── .env
+├── docker-compose.yml
+├── turbo.json
+└── pyproject.toml

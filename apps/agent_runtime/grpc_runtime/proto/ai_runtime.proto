@@ -1,0 +1,34 @@
+syntax = "proto3";
+
+package ai_runtime;
+
+service AIRuntimeService {
+
+  rpc ProcessQuery (AIQueryRequest)
+      returns (AIQueryResponse);
+
+}
+
+message AuthContext {
+
+  string user_id = 1;
+  string role = 2;
+  string tenant_id = 3;  
+
+}
+
+message AIQueryRequest {
+
+  string query = 1;
+
+  AuthContext auth = 2;
+
+}
+
+message AIQueryResponse {
+
+  bool success = 1;
+
+  string response = 2;
+
+}
