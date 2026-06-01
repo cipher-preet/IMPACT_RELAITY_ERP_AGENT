@@ -4,6 +4,8 @@
 
 ### command to start the server => python -m apps.agent_runtime.grpc_runtime.server.server
 
+### fast api run command => uvicorn apps.api_gateway.main:app --reload   
+
 
 
 Enterprise-grade scalable AI agent platform built using:
