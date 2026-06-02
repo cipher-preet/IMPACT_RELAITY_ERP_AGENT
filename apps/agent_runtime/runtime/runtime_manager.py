@@ -1,4 +1,4 @@
-from apps.agent_runtime.tools.registry.tool_registry import ToolRegistry
+from apps.agent_runtime.tools.registry.tool_registry import tool_registry
 
 from apps.agent_runtime.tools.registry.capability_registry import CapabilityRegistry
 
@@ -9,7 +9,7 @@ class RuntimeManager:
 
     def __init__(self):
 
-        self.tool_registry = ToolRegistry()
+        # self.tool_registry = ToolRegistry()
 
         self.capability_registry = CapabilityRegistry()
 
@@ -27,7 +27,7 @@ class RuntimeManager:
         for tool in tools:
             print(f" - {tool['name']}")
 
-        self.tool_registry.register(tools)
+        tool_registry.register(tools)
 
         self.capability_registry.build(tools)
 

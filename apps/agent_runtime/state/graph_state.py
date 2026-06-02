@@ -8,6 +8,7 @@ from typing import TypedDict
 class GraphState(TypedDict):
     workflow_id: str
     query: str
+    intent: Dict[str, Any]
     auth_context: Dict
     workflow_plan: Dict
     current_task_id: Optional[str]

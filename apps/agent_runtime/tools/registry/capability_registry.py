@@ -9,26 +9,28 @@ class CapabilityRegistry:
 
         self.capability_tools = defaultdict(list)
 
+        self.action_tools = {}
+
     def build(self, tools: list):
 
         for tool in tools:
 
-            entity_types = tool.get("entityTypes", [])
-
-            capabilities = tool.get("capabilities", [])
-
-            for entity in entity_types:
+            for entity in tool.get("entityTypes", []):
 
                 self.entity_tools[entity].append(tool)
 
-            for capability in capabilities:
+            for capability in tool.get("capabilities", []):
 
                 self.capability_tools[capability].append(tool)
 
-    def get_entity_tools(self, entity_type: str):
+            module = tool.get("module")
 
-        return self.entity_tools.get(entity_type, [])
+            action = tool.get("action")
 
-    def get_capability_tools(self, capability: str):
+            if module and action:
 
-        return self.capability_tools.get(capability, [])
+                self.action_tools[(module, action)] = tool
+
+    def get_tool_for_action(self, module, action):
+
+        return self.action_tools.get((module, action))

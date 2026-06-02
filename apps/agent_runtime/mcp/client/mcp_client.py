@@ -61,6 +61,10 @@ class MCPClient:
         request_id: Optional[str] = None,
     ):
 
+        print(
+            f"Calling tool {tool_name} with arguments {arguments} for run_id {run_id} and agency_id {agency_id}"
+        )
+
         payload = {
             "jsonrpc": "2.0",
             "id": 3,
@@ -71,7 +75,7 @@ class MCPClient:
                 "_meta": {
                     "runId": run_id,
                     "agencyId": agency_id,
-                    "requestId": request_id or str(uuid.uuid4()),
+                    # "requestId": request_id or str(uuid.uuid4()),
                     "confirmed": confirmed,
                 },
             },
@@ -82,6 +86,9 @@ class MCPClient:
             response = await client.post(
                 self.base_url, json=payload, headers=self._headers()
             )
+
+            print(f"Received response with status code:", response)
+
 
             response.raise_for_status()
 

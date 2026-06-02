@@ -26,3 +26,6 @@ class ToolRegistry:
     def exists(self, tool_name: str):
 
         return tool_name in self._tools
+
+
+tool_registry = ToolRegistry()
