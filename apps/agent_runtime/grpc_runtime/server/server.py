@@ -11,15 +11,8 @@ class AIRuntimeService(ai_runtime_pb2_grpc.AIRuntimeServiceServicer):
 
     def ProcessQuery(self, request, context):
 
-        print("\n=== QUERY RECEIVED ===")
-
-        print("Query:", request.query)
-
-        print("User ID:", request.auth.user_id)
-
         print("Role:", request.auth.role)
 
-        print("Tenant:", request.auth.tenant_id)
 
         return ai_runtime_pb2.AIQueryResponse(
             success=True, response=f"AI processed: {request.query}"

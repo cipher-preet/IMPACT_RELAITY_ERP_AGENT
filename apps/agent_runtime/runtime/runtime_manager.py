@@ -23,8 +23,9 @@ class RuntimeManager:
 
         tools = await self.discovery.discover_tools()
         
-        print(f"Found {len(tools)} tools")
         for tool in tools:
+            
+            
             print(f" - {tool['name']}")
 
         tool_registry.register(tools)

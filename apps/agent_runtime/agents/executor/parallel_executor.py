@@ -10,7 +10,7 @@ class ParallelExecutor:
         self.task_executor = TaskExecutor()
 
     async def execute_tasks(self, tasks, state):
-        
+
         coroutines = [self.task_executor.execute(task, state) for task in tasks]
 
         return await asyncio.gather(*coroutines, return_exceptions=True)

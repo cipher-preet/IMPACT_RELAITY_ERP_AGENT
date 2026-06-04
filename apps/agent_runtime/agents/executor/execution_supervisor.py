@@ -9,17 +9,19 @@ class ExecutionSupervisor:
 
         tasks = state["workflow_plan"].get("tasks", [])
 
-
-        processed = set(state["completed_tasks"] + state["failed_tasks"])
+        completed = set(state.get("completed_tasks", []))
+        failed = set(state.get("failed_tasks", []))
 
         for task in tasks:
 
-            if task["task_id"] in processed:
+            task_id = task["task_id"]
+
+            if task_id in completed or task_id in failed:
                 continue
 
             dependencies = task.get("dependencies", [])
 
-            if all(dep in processed for dep in dependencies):
+            if all(dep in completed for dep in dependencies):
                 executable_tasks.append(task)
 
         return executable_tasks
