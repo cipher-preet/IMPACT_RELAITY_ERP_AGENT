@@ -1,41 +1,122 @@
 from concurrent import futures
+import json
+import os
 import grpc
+import asyncio
 
 from apps.agent_runtime.grpc_runtime.generated import (
     ai_runtime_pb2,
     ai_runtime_pb2_grpc,
 )
 
-
-class AIRuntimeService(ai_runtime_pb2_grpc.AIRuntimeServiceServicer):
-
-    def ProcessQuery(self, request, context):
-
-        print("Role:", request.auth.role)
+from apps.agent_runtime.graphs.supervisor_graph.graph import SupervisorGraph
 
 
-        return ai_runtime_pb2.AIQueryResponse(
-            success=True, response=f"AI processed: {request.query}"
-        )
+def safe_json_loads(value, default):
+    if not value or value == "null":
+        return default
+
+    try:
+        return json.loads(value)
+    except Exception:
+        return default
 
 
-def start_grpc_server():
+class AssistantAiService(ai_runtime_pb2_grpc.AssistantAiServiceServicer):
 
-    server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
+    def RunAssistant(self, request_iterator, context):
 
-    ai_runtime_pb2_grpc.add_AIRuntimeServiceServicer_to_server(
-        AIRuntimeService(), server
-    )
+        metadata = dict(context.invocation_metadata())
 
-    server.add_insecure_port("[::]:50051")
+        auth_header = metadata.get("authorization")
+        expected_token = os.getenv("AI_GRPC_TOKEN")
 
-    print("\n gRPC Server Running On Port 50051\n")
+        if expected_token and auth_header != f"Bearer {expected_token}":
+            context.abort(grpc.StatusCode.UNAUTHENTICATED, "Invalid gRPC token")
 
-    server.start()
+        for request in request_iterator:
 
-    server.wait_for_termination()
+            if request.HasField("run_cancel"):
+                yield ai_runtime_pb2.AssistantStreamResponse(
+                    event=ai_runtime_pb2.AssistantEvent(
+                        event_type="run_cancelled",
+                        message="Run cancelled",
+                        payload_json=json.dumps(
+                            {
+                                "run_id": request.run_cancel.run_id,
+                                "reason": request.run_cancel.reason,
+                            }
+                        ),
+                    )
+                )
+                return
 
+            if request.HasField("run_start"):
 
-if __name__ == "__main__":
+                run = request.run_start
 
-    start_grpc_server()
+                query = run.user_message
+
+                access = safe_json_loads(run.access_json, {})
+                recent_messages = safe_json_loads(run.recent_messages_json, [])
+                pending_task_context = safe_json_loads(
+                    run.pending_task_context_json, None
+                )
+
+                auth_context = {
+                    "run_id": run.run_id,
+                    "user_id": run.user_id,
+                    "agency_id": run.agency_id,
+                    "session_id": run.session_id,
+                    "user_message": query,
+                    "summary_memory": run.summary_memory,
+                    "pending_task_context_json": pending_task_context,
+                    "recent_messages_json": recent_messages,
+                    "access_json": access,
+                }
+
+                graph = SupervisorGraph.build()
+
+                state = {
+                    "workflow_id": run.run_id,
+                    "query": query,
+                    "intent": {},
+                    "auth_context": auth_context,
+                    "workflow_plan": {},
+                    "current_task_id": None,
+                    "resolved_entities": {},
+                    "waiting_for_user_input": False,
+                    "pending_human_input": None,
+                    "human_input_history": [],
+                    "pending_clarifications": [],
+                    "completed_tasks": [],
+                    "failed_tasks": [],
+                    "task_results": {},
+                    "execution_logs": [],
+                    "workflow_status": "PENDING",
+                    "active_graph": "erp",
+                    "memory_context": {
+                        "summary_memory": run.summary_memory,
+                        "recent_messages": recent_messages,
+                        "pending_task_context": pending_task_context,
+                    },
+                    "retry_count": {},
+                    "final_response": None,
+                }
+
+                result = asyncio.run(graph.ainvoke(state))
+
+                final_response = result.get("final_response")
+
+                yield ai_runtime_pb2.AssistantStreamResponse(
+                    event=ai_runtime_pb2.AssistantEvent(
+                        event_type="run_completed",
+                        message=str(final_response),
+                        payload_json=json.dumps(
+                            {
+                                "success": True,
+                                "result": final_response,
+                            }
+                        ),
+                    )
+                )

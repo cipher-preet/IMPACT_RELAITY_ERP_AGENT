@@ -7,6 +7,22 @@
 ### fast api run command => uvicorn apps.api_gateway.main:app --reload   
 
 
+## ----------->>  GRPC Response from node server side <<--------------
+```
+=== New gRPC Assistant Run Request ===
+metadata: {'user-agent': 'grpc-node-js/1.14.4', 'authorization': 'Bearer 4ly3ZmAG6gMC8UVY4eCmxjefjxb2D7WXsCrpK3McIV4QekMVGaldaoU9A08dT46W8Qi2MH29cc63xPCcU9AYg77kbbDs4YqkYMhBmk0Y7XPyWYzQcVAO1HZuQ3IPmSKwxbe23puPsQRzPECCU48B80TGeJIbx1CvAeAARSwDRtfE7BC3MmT', 'accept-encoding': 'identity'}
+request received: run_start {
+  run_id: "e660c311-7a62-4992-90e2-6f2500918fd2"
+  user_id: "2c185e8c-0be8-435c-adf5-6b9b77a13fdd"
+  session_id: "sess_SYpyuFm_cmjKxY5nP0-ukBat"
+  agency_id: "df5d452e-9254-45fc-b094-2715d9c26c0e"
+  user_message: "jaldi bta de bhai"
+  pending_task_context_json: "null"
+  recent_messages_json: "[{\"senderType\":\"user\",\"message\":\"hello mr assistant\",\"createdAt\":\"2026-06-02T13:32:43.433Z\"},{\"senderType\":\"user\",\"message\":\"hello mr assistant\",\"createdAt\":\"2026-06-04T10:11:36.152Z\"},{\"senderType\":\"user\",\"message\":\"hello mr assistant\",\"createdAt\":\"2026-06-04T10:18:38.644Z\"},{\"senderType\":\"user\",\"message\":\"hello mr assistant\",\"createdAt\":\"2026-06-04T10:25:15.406Z\"},{\"senderType\":\"user\",\"message\":\"hello mr assistant\",\"createdAt\":\"2026-06-04T10:28:26.626Z\"},{\"senderType\":\"user\",\"message\":\"hello mr assistant\",\"createdAt\":\"2026-06-04T10:30:01.316Z\"},{\"senderType\":\"user\",\"message\":\"jaldi bta de bhai\",\"createdAt\":\"2026-06-04T10:31:16.921Z\"},{\"senderType\":\"user\",\"message\":\"jaldi bta de bhai\",\"createdAt\":\"2026-06-04T10:36:56.311Z\"},{\"senderType\":\"user\",\"message\":\"jaldi bta de bhai\",\"createdAt\":\"2026-06-04T10:38:32.085Z\"},{\"senderType\":\"user\",\"message\":\"jaldi bta de bhai\",\"createdAt\":\"2026-06-04T10:44:38.422Z\"},{\"senderType\":\"user\",\"message\":\"jaldi bta de bhai\",\"createdAt\":\"2026-06-04T11:04:52.639Z\"},{\"senderType\":\"assistant\",\"message\":\"AI processed: jaldi bta de bhai\",\"createdAt\":\"2026-06-04T11:04:54.467Z\"},{\"senderType\":\"user\",\"message\":\"jaldi bta de bhai\",\"createdAt\":\"2026-06-04T11:28:43.340Z\"},{\"senderType\":\"assistant\",\"message\":\"AI processed: jaldi bta de bhai\",\"createdAt\":\"2026-06-04T11:28:45.595Z\"},{\"senderType\":\"user\",\"message\":\"jaldi bta de bhai\",\"createdAt\":\"2026-06-04T11:34:15.330Z\"},{\"senderType\":\"user\",\"message\":\"jaldi bta de bhai\",\"createdAt\":\"2026-06-04T11:37:36.403Z\"}]"
+  access_json: "{\"permissions\":[\"property.listing.manage\",\"lead.new.access\",\"lead.view_all\",\"lead.edit\",\"lead.status.manage\",\"lead.closure_approval.submit\",\"lead.member.assign_remove\",\"kyc.enforce\",\"agency.member.view\",\"finance.view\",\"inventory.manage\",\"inventory.broker.assign\",\"property.listing.publish\",\"property.web_link.create\",\"board.member.add\",\"agency.kyb.update\",\"agency.kyb.view\",\"agency.invitation.view\",\"agency.invitation.send\",\"role.view\",\"role.create\",\"role.permission.update\",\"role.assign\",\"board.view\",\"board.create\",\"board.update\",\"board.delete\",\"board.template.assign\",\"board.stage_assignee.assign\",\"board.lead.assign\",\"board.lead.move\",\"template.view\",\"template.create\",\"template.update\",\"template.delete\",\"template.stage.manage\"],\"roles\":[\"Super Admin\"]}"
+}
+```
+
 
 Enterprise-grade scalable AI agent platform built using:
 

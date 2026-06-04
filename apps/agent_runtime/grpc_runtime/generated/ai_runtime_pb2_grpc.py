@@ -3,7 +3,7 @@
 import grpc
 import warnings
 
-from . import ai_runtime_pb2 as ai__runtime__pb2
+import apps.agent_runtime.grpc_runtime.generated.ai_runtime_pb2 as ai__runtime__pb2
 
 GRPC_GENERATED_VERSION = '1.80.0'
 GRPC_VERSION = grpc.__version__
@@ -25,7 +25,7 @@ if _version_not_supported:
     )
 
 
-class AIRuntimeServiceStub(object):
+class AssistantAiServiceStub(object):
     """Missing associated documentation comment in .proto file."""
 
     def __init__(self, channel):
@@ -34,43 +34,43 @@ class AIRuntimeServiceStub(object):
         Args:
             channel: A grpc.Channel.
         """
-        self.ProcessQuery = channel.unary_unary(
-                '/ai_runtime.AIRuntimeService/ProcessQuery',
-                request_serializer=ai__runtime__pb2.AIQueryRequest.SerializeToString,
-                response_deserializer=ai__runtime__pb2.AIQueryResponse.FromString,
+        self.RunAssistant = channel.stream_stream(
+                '/impact.assistant.v1.AssistantAiService/RunAssistant',
+                request_serializer=ai__runtime__pb2.AssistantStreamRequest.SerializeToString,
+                response_deserializer=ai__runtime__pb2.AssistantStreamResponse.FromString,
                 _registered_method=True)
 
 
-class AIRuntimeServiceServicer(object):
+class AssistantAiServiceServicer(object):
     """Missing associated documentation comment in .proto file."""
 
-    def ProcessQuery(self, request, context):
+    def RunAssistant(self, request_iterator, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
 
-def add_AIRuntimeServiceServicer_to_server(servicer, server):
+def add_AssistantAiServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
-            'ProcessQuery': grpc.unary_unary_rpc_method_handler(
-                    servicer.ProcessQuery,
-                    request_deserializer=ai__runtime__pb2.AIQueryRequest.FromString,
-                    response_serializer=ai__runtime__pb2.AIQueryResponse.SerializeToString,
+            'RunAssistant': grpc.stream_stream_rpc_method_handler(
+                    servicer.RunAssistant,
+                    request_deserializer=ai__runtime__pb2.AssistantStreamRequest.FromString,
+                    response_serializer=ai__runtime__pb2.AssistantStreamResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
-            'ai_runtime.AIRuntimeService', rpc_method_handlers)
+            'impact.assistant.v1.AssistantAiService', rpc_method_handlers)
     server.add_generic_rpc_handlers((generic_handler,))
-    server.add_registered_method_handlers('ai_runtime.AIRuntimeService', rpc_method_handlers)
+    server.add_registered_method_handlers('impact.assistant.v1.AssistantAiService', rpc_method_handlers)
 
 
  # This class is part of an EXPERIMENTAL API.
-class AIRuntimeService(object):
+class AssistantAiService(object):
     """Missing associated documentation comment in .proto file."""
 
     @staticmethod
-    def ProcessQuery(request,
+    def RunAssistant(request_iterator,
             target,
             options=(),
             channel_credentials=None,
@@ -80,12 +80,12 @@ class AIRuntimeService(object):
             wait_for_ready=None,
             timeout=None,
             metadata=None):
-        return grpc.experimental.unary_unary(
-            request,
+        return grpc.experimental.stream_stream(
+            request_iterator,
             target,
-            '/ai_runtime.AIRuntimeService/ProcessQuery',
-            ai__runtime__pb2.AIQueryRequest.SerializeToString,
-            ai__runtime__pb2.AIQueryResponse.FromString,
+            '/impact.assistant.v1.AssistantAiService/RunAssistant',
+            ai__runtime__pb2.AssistantStreamRequest.SerializeToString,
+            ai__runtime__pb2.AssistantStreamResponse.FromString,
             options,
             channel_credentials,
             insecure,

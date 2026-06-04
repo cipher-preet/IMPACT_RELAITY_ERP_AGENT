@@ -114,11 +114,6 @@ class ExecutorNode:
 
                 if self._is_hitl_task(task):
 
-                    print(
-                        "this is a hitl task!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!",
-                        task,
-                    )
-
                     hitl_result = HITLBuilder.build_from_task(task)
 
                     return self._apply_human_loop_state(

@@ -27,5 +27,5 @@ class GraphState(TypedDict):
     active_graph: Optional[str]
     memory_context: Dict
     retry_count: Dict[str, int]
-    
+
     final_response: None

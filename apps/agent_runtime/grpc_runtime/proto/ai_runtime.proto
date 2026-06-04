@@ -1,34 +1,41 @@
 syntax = "proto3";
 
-package ai_runtime;
+package impact.assistant.v1;
 
-service AIRuntimeService {
-
-  rpc ProcessQuery (AIQueryRequest)
-      returns (AIQueryResponse);
-
+service AssistantAiService {
+  rpc RunAssistant(stream AssistantStreamRequest) returns (stream AssistantStreamResponse);
 }
 
-message AuthContext {
-
-  string user_id = 1;
-  string role = 2;
-  string tenant_id = 3;  
-
+message AssistantStreamRequest {
+  oneof payload {
+    AssistantRunStart run_start = 1;
+    AssistantRunCancel run_cancel = 2;
+  }
 }
 
-message AIQueryRequest {
-
-  string query = 1;
-
-  AuthContext auth = 2;
-
+message AssistantRunStart {
+  string run_id = 1;
+  string user_id = 2;
+  string session_id = 3;
+  string agency_id = 4;
+  string user_message = 5;
+  string summary_memory = 6;
+  string pending_task_context_json = 7;
+  string recent_messages_json = 8;
+  string access_json = 9;
 }
 
-message AIQueryResponse {
+message AssistantRunCancel {
+  string run_id = 1;
+  string reason = 2;
+}
 
-  bool success = 1;
+message AssistantStreamResponse {
+  AssistantEvent event = 1;
+}
 
-  string response = 2;
-
+message AssistantEvent {
+  string event_type = 1;
+  string message = 2;
+  string payload_json = 3;
 }

@@ -7,49 +7,63 @@ class HITLBuilder:
     @staticmethod
     def build_from_task(task: Dict[str, Any]) -> Dict[str, Any]:
 
-        action = task.get("action")
+        action = str(task.get("action", "")).upper()
+        module = str(task.get("module", "")).upper()
 
-        if action in ["REQUEST_CLARIFICATION", "CLARIFY"]:
+        task_id = task["task_id"]
 
-            return {
-                "requires_human_input": True,
-                "status": "WAITING_FOR_USER",
-                "human_input": {
-                    "id": f"hitl_{task['task_id']}",
-                    "type": "CLARIFICATION",
-                    "task_id": task["task_id"],
-                    "message": task.get(
-                        "description", "Please provide clarification to continue."
-                    ),
-                    "options": [],
-                    "required_fields": task.get("required_entities", []),
-                    "metadata": {"task": task},
-                    "status": "PENDING",
-                    "created_at": datetime.utcnow().isoformat(),
+        is_clarification = (
+            "CLARIFICATION" in action
+            or "CLARIFY" in action
+            or module == "CLARIFICATION"
+        )
+
+        is_approval = (
+            "APPROVAL" in action or module == "APPROVAL" or module == "HUMAN_APPROVAL"
+        )
+
+        if is_approval:
+
+            hitl_type = "APPROVAL"
+
+            options = [
+                {
+                    "label": "Approve",
+                    "value": "APPROVED",
                 },
-            }
-
-        if action in ["REQUEST_APPROVAL", "APPROVE"]:
-
-            return {
-                "requires_human_input": True,
-                "status": "WAITING_FOR_USER",
-                "human_input": {
-                    "id": f"hitl_{task['task_id']}",
-                    "type": "APPROVAL",
-                    "task_id": task["task_id"],
-                    "message": task.get(
-                        "description", "Approval is required before continuing."
-                    ),
-                    "options": [
-                        {"label": "Approve", "value": "APPROVED"},
-                        {"label": "Reject", "value": "REJECTED"},
-                    ],
-                    "required_fields": [],
-                    "metadata": {"task": task},
-                    "status": "PENDING",
-                    "created_at": datetime.utcnow().isoformat(),
+                {
+                    "label": "Reject",
+                    "value": "REJECTED",
                 },
-            }
+            ]
 
-        return {}
+        elif is_clarification:
+
+            hitl_type = "CLARIFICATION"
+            options = []
+
+        else:
+
+            hitl_type = "HUMAN_INPUT"
+            options = []
+
+        return {
+            "requires_human_input": True,
+            "status": "WAITING_FOR_USER",
+            "human_input": {
+                "id": f"hitl_{task_id}",
+                "type": hitl_type,
+                "task_id": task_id,
+                "message": task.get(
+                    "description",
+                    "Human input is required to continue.",
+                ),
+                "options": options,
+                "required_fields": task.get("required_entities", []),
+                "metadata": {
+                    "task": task,
+                },
+                "status": "PENDING",
+                "created_at": datetime.utcnow().isoformat(),
+            },
+        }
