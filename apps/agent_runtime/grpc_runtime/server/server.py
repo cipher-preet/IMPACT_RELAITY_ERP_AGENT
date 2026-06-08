@@ -4,6 +4,7 @@ import os
 import grpc
 import asyncio
 
+from apps.agent_runtime.agents.constants.event_types import AssistantEventType
 from apps.agent_runtime.grpc_runtime.generated import (
     ai_runtime_pb2,
     ai_runtime_pb2_grpc,
@@ -11,10 +12,9 @@ from apps.agent_runtime.grpc_runtime.generated import (
 
 from apps.agent_runtime.graphs.supervisor_graph.graph import SupervisorGraph
 from apps.agent_runtime.runtime.runtime_manager import RuntimeManager
-# runtime_manager = runtime_manager.RuntimeManager()
+
 
 runtime_manager = RuntimeManager()
-
 
 
 def safe_json_loads(value, default):
@@ -28,7 +28,7 @@ def safe_json_loads(value, default):
 
 
 class AssistantAiService(ai_runtime_pb2_grpc.AssistantAiServiceServicer):
-    
+
     def __init__(self, runtime_manager):
         self.runtime_manager = runtime_manager
 
@@ -64,8 +64,7 @@ class AssistantAiService(ai_runtime_pb2_grpc.AssistantAiServiceServicer):
                 run = request.run_start
 
                 query = run.user_message
-                
-                print(f"Received run start request with query ====: {query}")
+
 
                 access = safe_json_loads(run.access_json, {})
                 recent_messages = safe_json_loads(run.recent_messages_json, [])
@@ -85,9 +84,7 @@ class AssistantAiService(ai_runtime_pb2_grpc.AssistantAiServiceServicer):
                     "access_json": json.dumps(access or {}),
                 }
 
-                print(
-                    f"Received run start request ________________ --->>> {auth_context}"
-                )
+               
 
                 graph = SupervisorGraph.build()
 
@@ -114,32 +111,41 @@ class AssistantAiService(ai_runtime_pb2_grpc.AssistantAiServiceServicer):
                     "final_response": None,
                 }
 
-                print(f"Starting run ________________ --->>> {state}")
-
                 result = asyncio.run(graph.ainvoke(state))
-
-                print(f"Completed run ________________ --->>> {result}")
-
                 final_response = result.get("final_response")
+                event_type = (
+                    final_response.get("event_type")
+                    if isinstance(final_response, dict)
+                    else AssistantEventType.RUN_FAILED
+                )
+                message = (
+                    final_response.get("message")
+                    if isinstance(final_response, dict)
+                    else "An error occurred during processing."
+                )
+                options = (
+                    final_response.get("payload", {}).get("options", [])
+                    if isinstance(final_response, dict)
+                    else []
+                )
 
-                print(f"Final response ________________ --->>> {final_response}")
+                print(f"Final response: {final_response}")
+
+                # print(f"Final response 11111  {event_type}")
+                # print(f"Final response:22222  {message}")
+                # print(f"Final response:33333  {options}")
 
                 yield ai_runtime_pb2.AssistantStreamResponse(
                     event=ai_runtime_pb2.AssistantEvent(
-                        event_type="follow_up_question",
-                        message=str(final_response),
-                        payload_json=json.dumps(
-                            {
-                                "success": True,
-                                "result": final_response,
-                            }
-                        ),
+                        event_type=event_type,
+                        message=message,
+                        payload_json=json.dumps(options),
                     )
                 )
 
 
 def start_grpc_server():
-    
+
     asyncio.run(runtime_manager.initialize())
 
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))

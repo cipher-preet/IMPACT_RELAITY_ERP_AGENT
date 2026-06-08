@@ -58,7 +58,6 @@ class MCPClient:
         run_id: str,
         agency_id: Optional[str] = None,
         confirmed: bool = False,
-        request_id: Optional[str] = None,
     ):
 
         payload = {

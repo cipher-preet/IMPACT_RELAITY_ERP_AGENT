@@ -1,7 +1,6 @@
 from langgraph.graph import StateGraph, END
 
 from apps.agent_runtime.state.graph_state import GraphState
-
 from apps.agent_runtime.nodes.reasoning.intent_node import IntentNode
 from apps.agent_runtime.nodes.planning.planner_node import PlannerNode
 from apps.agent_runtime.nodes.execution.executor_node import ExecutorNode
@@ -21,10 +20,7 @@ class SupervisorGraph:
         if status == "WAITING_FOR_USER":
             return "human_response"
 
-        if status == "COMPLETED":
-            return "response"
-
-        if status == "FAILED":
+        if status in ["COMPLETED", "FAILED", "PERMISSION_DENIED", "CANCELLED"]:
             return "response"
 
         return "executor"
@@ -55,7 +51,8 @@ class SupervisorGraph:
             },
         )
 
-        graph.add_edge("human_response", END)
+        # IMPORTANT FIX
+        graph.add_edge("human_response", "response")
         graph.add_edge("response", END)
 
         return graph.compile()

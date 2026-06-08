@@ -1,13 +1,14 @@
 from datetime import datetime
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from apps.agent_runtime.state.graph_state import GraphState
 from apps.agent_runtime.agents.executor.parallel_executor import ParallelExecutor
 from apps.agent_runtime.agents.executor.execution_supervisor import ExecutionSupervisor
-from apps.agent_runtime.nodes.human_in_the_loop.hitl_builder import HITLBuilder
 
 
 class ExecutorNode:
+
+    DEFAULT_MAX_RETRIES = 3
 
     def __init__(self):
         self.parallel_executor = ParallelExecutor()
@@ -17,79 +18,247 @@ class ExecutorNode:
         return datetime.utcnow().isoformat()
 
     def _ensure_state_defaults(self, state: GraphState) -> GraphState:
-        state["workflow_plan"] = state.get("workflow_plan") or {}
-        state["completed_tasks"] = state.get("completed_tasks") or []
-        state["failed_tasks"] = state.get("failed_tasks") or []
-        state["task_results"] = state.get("task_results") or {}
-        state["execution_logs"] = state.get("execution_logs") or []
-        state["pending_clarifications"] = state.get("pending_clarifications") or []
-        state["human_input_history"] = state.get("human_input_history") or []
-        state["retry_count"] = state.get("retry_count") or {}
-        state["resolved_entities"] = state.get("resolved_entities") or {}
-        state["memory_context"] = state.get("memory_context") or {}
-        state["auth_context"] = state.get("auth_context") or {}
+        defaults = {
+            "workflow_plan": {},
+            "completed_tasks": [],
+            "failed_tasks": [],
+            "task_results": {},
+            "execution_logs": [],
+            "pending_clarifications": [],
+            "human_input_history": [],
+            "retry_count": {},
+            "resolved_entities": {},
+            "memory_context": {},
+            "auth_context": {},
+            "waiting_for_user_input": False,
+            "pending_human_input": None,
+        }
+
+        for key, default_value in defaults.items():
+            state[key] = state.get(key) or default_value
+
         return state
 
-    def _safe_get_candidates(self, result: Any) -> List[Dict[str, Any]]:
+    def _extract_structured_content(
+        self,
+        result: Optional[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+
+        print("this is print result ____________ >>> ", result)
+
         if not isinstance(result, dict):
-            return []
+            return {}
 
         result_data = result.get("result") or {}
 
         if not isinstance(result_data, dict):
-            return []
+            return {}
 
         structured = result_data.get("structuredContent") or {}
 
         if not isinstance(structured, dict):
-            return []
+            return {}
 
+        return structured
+
+    def _extract_data(
+        self,
+        result: Optional[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+
+        structured = self._extract_structured_content(result)
         data = structured.get("data") or {}
 
-        if not isinstance(data, dict):
-            return []
+        return data if isinstance(data, dict) else {}
 
-        candidates = data.get("candidates") or []
+    def _extract_status(
+        self,
+        result: Optional[Dict[str, Any]],
+    ) -> str:
 
-        if not isinstance(candidates, list):
-            return []
+        structured = self._extract_structured_content(result)
 
-        return candidates
+        return str(structured.get("status") or "").lower()
 
-    def _is_hitl_task(self, task: dict) -> bool:
+    def _is_failed_result(
+        self,
+        result: Optional[Dict[str, Any]],
+    ) -> bool:
+
+        status = self._extract_status(result)
+
+        if status in {"error", "failed", "failure"}:
+            return True
+
+        if isinstance(result, dict) and result.get("success") is False:
+            return True
+
+        structured = self._extract_structured_content(result)
+
+        return structured.get("success") is False
+
+    def _result_error(
+        self,
+        result: Optional[Dict[str, Any]],
+    ) -> Exception:
+
+        if not isinstance(result, dict):
+            return RuntimeError("Task execution returned an invalid result.")
+
+        structured = self._extract_structured_content(result)
+        message = (
+            structured.get("message")
+            or structured.get("error")
+            or result.get("message")
+            or result.get("error")
+            or "Task execution failed."
+        )
+
+        return RuntimeError(str(message))
+
+    def _max_retries_for_task(self, task: Dict[str, Any]) -> int:
+
+        retry_policy = task.get("retry_policy") or {}
+        max_retries = retry_policy.get("max_retries", self.DEFAULT_MAX_RETRIES)
+
+        try:
+            return max(0, int(max_retries))
+        except (TypeError, ValueError):
+            return self.DEFAULT_MAX_RETRIES
+
+    def _register_retry(
+        self,
+        state: GraphState,
+        task: Dict[str, Any],
+        error: Exception,
+    ) -> bool:
+
+        task_id = task.get("task_id") or "unknown_task"
+        retry_count = state["retry_count"].get(task_id, 0)
+        max_retries = self._max_retries_for_task(task)
+
+        if retry_count >= max_retries:
+            return False
+
+        next_retry_count = retry_count + 1
+        state["retry_count"][task_id] = next_retry_count
+
+        state["execution_logs"].append(
+            {
+                "task_id": task_id,
+                "status": "RETRYING",
+                "retry_count": next_retry_count,
+                "max_retries": max_retries,
+                "error": str(error),
+                "timestamp": self._now(),
+            }
+        )
+
+        return True
+
+    def _extract_options(
+        self,
+        result: Optional[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+
+        data = self._extract_data(result)
+
+        for value in data.values():
+            if isinstance(value, list):
+                return value
+
+        return []
+
+    def _is_hitl_task(self, task: Dict[str, Any]) -> bool:
         if not isinstance(task, dict):
             return False
 
-        action = str(task.get("action") or "").upper()
-        module = str(task.get("module") or "").upper()
-        execution_type = str(task.get("execution_type") or "").upper()
+        execution = task.get("execution") or {}
+        human_loop = task.get("human_loop") or {}
 
-        return (
-            action in [
-                "REQUEST_CLARIFICATION",
-                "CLARIFY",
-                "REQUEST_APPROVAL",
-                "APPROVE",
-                "REQUEST_CONFIRMATION",
-                "CONFIRM",
-            ]
-            or module in [
-                "APPROVAL",
-                "HUMAN_APPROVAL",
-                "CLARIFICATION",
-                "COMMUNICATION",
-            ]
-            or execution_type in [
-                "HUMAN_APPROVAL",
-                "HUMAN_INPUT",
-            ]
-        )
+        mode = str(execution.get("mode") or "").upper()
+        trigger = str(human_loop.get("trigger") or "").upper()
+
+        return mode in {
+            "HUMAN_INPUT",
+            "APPROVAL",
+            "CONFIRMATION",
+        } or (human_loop.get("enabled") is True and trigger == "ALWAYS")
+
+    def _is_human_loop_required(
+        self,
+        task: Dict[str, Any],
+        result: Optional[Dict[str, Any]],
+    ) -> bool:
+
+        if not isinstance(task, dict):
+            return False
+
+        human_loop = task.get("human_loop") or {}
+
+        if human_loop.get("enabled") is not True:
+            return False
+
+        trigger = str(human_loop.get("trigger") or "").upper()
+
+        if trigger == "ALWAYS":
+            return True
+
+        if trigger == "MULTIPLE_RESULTS":
+            return len(self._extract_options(result)) > 1
+
+        if trigger == "SINGLE_RESULT":
+            return len(self._extract_options(result)) == 1
+
+        if trigger == "NO_RESULTS":
+            return len(self._extract_options(result)) == 0
+
+        if trigger == "TOOL_REQUIRES_INPUT":
+            structured = self._extract_structured_content(result)
+            status = str(structured.get("status") or "").lower()
+
+            return status in {
+                "requires_input",
+                "requires_confirmation",
+            }
+
+        return False
+
+    def _build_hitl_result(
+        self,
+        task: Dict[str, Any],
+        result: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+
+        task_id = task.get("task_id") or "unknown_task"
+        human_loop = task.get("human_loop") or {}
+
+        input_type = human_loop.get("input_type") or "INPUT"
+        message = human_loop.get("message") or "Please provide input to continue."
+
+        return {
+            "requires_human_input": True,
+            "status": "WAITING_FOR_USER",
+            "human_input": {
+                "id": f"hitl_{task_id}",
+                "type": input_type,
+                "task_id": task_id,
+                "message": message,
+                "options": self._extract_options(result),
+                "metadata": {
+                    "task": task,
+                    "tool_result": result,
+                },
+                "status": "PENDING",
+                "created_at": self._now(),
+            },
+        }
 
     def _apply_human_loop_state(
         self,
         state: GraphState,
-        task: dict,
-        hitl_result: dict,
+        task: Dict[str, Any],
+        hitl_result: Dict[str, Any],
     ) -> GraphState:
 
         state = self._ensure_state_defaults(state)
@@ -101,31 +270,79 @@ class ExecutorNode:
         state["workflow_status"] = "WAITING_FOR_USER"
         state["waiting_for_user_input"] = True
         state["pending_human_input"] = human_input
-
         state["pending_clarifications"].append(human_input)
         state["task_results"][task_id] = hitl_result
 
-        state["execution_logs"].append({
-            "task_id": task_id,
-            "status": "WAITING_FOR_USER",
-            "timestamp": self._now(),
-        })
+        state["execution_logs"].append(
+            {
+                "task_id": task_id,
+                "status": "WAITING_FOR_USER",
+                "timestamp": self._now(),
+            }
+        )
 
         return state
 
-    def _is_human_loop_required(self, result: dict) -> bool:
-        if not isinstance(result, dict):
-            return False
+    def _mark_success(
+        self,
+        state: GraphState,
+        task: Dict[str, Any],
+        result: Any,
+    ) -> None:
 
-        if result.get("requires_human_input") is True:
-            return True
+        task_id = task.get("task_id") or "unknown_task"
 
-        if result.get("status") == "WAITING_FOR_USER":
-            return True
+        if task_id not in state["completed_tasks"]:
+            state["completed_tasks"].append(task_id)
 
-        candidates = self._safe_get_candidates(result)
+        state["task_results"][task_id] = result
 
-        return len(candidates) > 1
+        state["execution_logs"].append(
+            {
+                "task_id": task_id,
+                "status": "SUCCESS",
+                "timestamp": self._now(),
+            }
+        )
+
+    def _mark_failed(
+        self,
+        state: GraphState,
+        task: Dict[str, Any],
+        error: Exception,
+    ) -> None:
+
+        task_id = task.get("task_id") or "unknown_task"
+
+        if task_id not in state["failed_tasks"]:
+            state["failed_tasks"].append(task_id)
+
+        state["task_results"][task_id] = {
+            "error": str(error),
+        }
+
+        state["execution_logs"].append(
+            {
+                "task_id": task_id,
+                "status": "FAILED",
+                "error": str(error),
+                "timestamp": self._now(),
+            }
+        )
+
+    def _finalize_status(self, state: GraphState) -> None:
+        tasks = state.get("workflow_plan", {}).get("tasks") or []
+        total_tasks = len(tasks)
+
+        if state["failed_tasks"]:
+            state["workflow_status"] = "FAILED"
+            return
+
+        if total_tasks > 0 and len(state["completed_tasks"]) >= total_tasks:
+            state["workflow_status"] = "COMPLETED"
+            return
+
+        state["workflow_status"] = "RUNNING"
 
     async def run(self, state: GraphState) -> GraphState:
 
@@ -138,26 +355,26 @@ class ExecutorNode:
         state["workflow_status"] = "RUNNING"
 
         while True:
-
             executable_tasks = self.supervisor.get_executable_tasks(state) or []
 
             if not executable_tasks:
                 break
 
-            for task in executable_tasks:
+            hitl_tasks = [
+                task
+                for task in executable_tasks
+                if isinstance(task, dict) and self._is_hitl_task(task)
+            ]
 
-                if not isinstance(task, dict):
-                    continue
+            if hitl_tasks:
+                task = hitl_tasks[0]
+                hitl_result = self._build_hitl_result(task)
 
-                if self._is_hitl_task(task):
-
-                    hitl_result = HITLBuilder.build_from_task(task) or {}
-
-                    return self._apply_human_loop_state(
-                        state=state,
-                        task=task,
-                        hitl_result=hitl_result,
-                    )
+                return self._apply_human_loop_state(
+                    state=state,
+                    task=task,
+                    hitl_result=hitl_result,
+                )
 
             normal_tasks = [
                 task
@@ -173,71 +390,46 @@ class ExecutorNode:
                     normal_tasks,
                     state,
                 )
+
             except Exception as exc:
+                has_retry = False
+
                 for task in normal_tasks:
-                    task_id = task.get("task_id") or "unknown_task"
+                    if self._register_retry(state, task, exc):
+                        has_retry = True
+                        continue
 
-                    if task_id not in state["failed_tasks"]:
-                        state["failed_tasks"].append(task_id)
+                    self._mark_failed(state, task, exc)
 
-                    state["task_results"][task_id] = {
-                        "error": str(exc)
-                    }
-
-                    state["execution_logs"].append({
-                        "task_id": task_id,
-                        "status": "FAILED",
-                        "error": str(exc),
-                        "timestamp": self._now(),
-                    })
+                if has_retry:
+                    continue
 
                 break
 
-            results = results or []
+            task_results = list(results or [])
 
-            for task, result in zip(normal_tasks, results):
+            if len(task_results) < len(normal_tasks):
+                missing_count = len(normal_tasks) - len(task_results)
+                task_results.extend(
+                    RuntimeError("Task execution did not return a result.")
+                    for _ in range(missing_count)
+                )
 
-                task_id = task.get("task_id") or "unknown_task"
-                state["current_task_id"] = task_id
+            for task, result in zip(normal_tasks, task_results):
+                state["current_task_id"] = task.get("task_id") or "unknown_task"
 
                 if isinstance(result, Exception):
+                    if self._register_retry(state, task, result):
+                        continue
 
-                    if task_id not in state["failed_tasks"]:
-                        state["failed_tasks"].append(task_id)
-
-                    state["task_results"][task_id] = {
-                        "error": str(result)
-                    }
-
-                    state["execution_logs"].append({
-                        "task_id": task_id,
-                        "status": "FAILED",
-                        "error": str(result),
-                        "timestamp": self._now(),
-                    })
-
+                    self._mark_failed(state, task, result)
                     continue
 
-                if self._is_human_loop_required(result):
-
-                    candidates = self._safe_get_candidates(result)
-
-                    hitl_result = {
-                        "requires_human_input": True,
-                        "status": "WAITING_FOR_USER",
-                        "human_input": {
-                            "id": f"hitl_{task_id}",
-                            "type": "OPTION_SELECTION",
-                            "task_id": task_id,
-                            "message": "Multiple matching records found. Please select one.",
-                            "options": candidates,
-                            "metadata": {
-                                "tool_result": result
-                            },
-                            "status": "PENDING",
-                            "created_at": self._now(),
-                        },
-                    }
+                if self._is_human_loop_required(task, result):
+                    hitl_result = self._build_hitl_result(
+                        task=task,
+                        result=result,
+                    )
 
                     return self._apply_human_loop_state(
                         state=state,
@@ -245,27 +437,17 @@ class ExecutorNode:
                         hitl_result=hitl_result,
                     )
 
-                if task_id not in state["completed_tasks"]:
-                    state["completed_tasks"].append(task_id)
+                if self._is_failed_result(result):
+                    error = self._result_error(result)
 
-                state["task_results"][task_id] = result
+                    if self._register_retry(state, task, error):
+                        continue
 
-                state["execution_logs"].append({
-                    "task_id": task_id,
-                    "status": "SUCCESS",
-                    "timestamp": self._now(),
-                })
+                    self._mark_failed(state, task, error)
+                    continue
 
-        tasks = state.get("workflow_plan", {}).get("tasks") or []
-        total_tasks = len(tasks)
+                self._mark_success(state, task, result)
 
-        if state["failed_tasks"]:
-            state["workflow_status"] = "FAILED"
-
-        elif total_tasks > 0 and len(state["completed_tasks"]) >= total_tasks:
-            state["workflow_status"] = "COMPLETED"
-
-        else:
-            state["workflow_status"] = "RUNNING"
+        self._finalize_status(state)
 
         return state

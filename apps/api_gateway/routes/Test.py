@@ -61,7 +61,7 @@ async def classify_intent(payload: dict):
 
     return {
         "success": True,
-        "result": result.get("final_response"),
+        "result": result,
         # "plan": workflow_plan,
         # "query": query,
         # "intent": intent,
