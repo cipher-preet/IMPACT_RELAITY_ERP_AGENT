@@ -8,6 +8,12 @@ from typing import TypedDict
 class GraphState(TypedDict):
     workflow_id: str
     query: str
+    
+    run_id: str
+    user_id: str
+    agency_id: str
+    session_id: str
+    
     intent: Dict[str, Any]
     auth_context: Dict
     workflow_plan: Dict
@@ -29,3 +35,7 @@ class GraphState(TypedDict):
     retry_count: Dict[str, int]
 
     final_response: None
+    
+    checkpoint: Optional[Dict[str, Any]]
+
+    access:Optional[Dict[str,Any]]

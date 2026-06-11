@@ -9,6 +9,8 @@ class TaskExecutor:
     async def execute(self, task: dict, state):
 
         auth_context = state.get("auth_context", {})
+        
+        print("htis is auth contect print", auth_context)
 
         selected_tool = await tool_selector.select(
             task=task, available_tools=tool_registry.get_all_tools()
@@ -23,6 +25,8 @@ class TaskExecutor:
             resolved_entities=state.get("resolved_entities", {}),
             auth_context=auth_context,
         )
+
+        print("this is selcted tool name ----->>> ", selected_tool.name)
 
         result = await mcp_client.call_tool(
             tool_name=selected_tool.name,

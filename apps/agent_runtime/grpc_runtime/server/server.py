@@ -13,6 +13,8 @@ from apps.agent_runtime.grpc_runtime.generated import (
 from apps.agent_runtime.graphs.supervisor_graph.graph import SupervisorGraph
 from apps.agent_runtime.runtime.runtime_manager import RuntimeManager
 
+from apps.agent_runtime.nodes.memory.normalizers.grpc_memory_normalizer import GrpcMemoryNormalizer
+
 
 runtime_manager = RuntimeManager()
 
@@ -65,7 +67,6 @@ class AssistantAiService(ai_runtime_pb2_grpc.AssistantAiServiceServicer):
 
                 query = run.user_message
 
-
                 access = safe_json_loads(run.access_json, {})
                 recent_messages = safe_json_loads(run.recent_messages_json, [])
                 pending_task_context = safe_json_loads(
@@ -83,10 +84,12 @@ class AssistantAiService(ai_runtime_pb2_grpc.AssistantAiServiceServicer):
                     "recent_messages_json": json.dumps(recent_messages or []),
                     "access_json": json.dumps(access or {}),
                 }
-
-               
+                
+                print("this is toal payload i print @@@@@@@@@@@@@@@@ ", auth_context)
 
                 graph = SupervisorGraph.build()
+                
+                # memory = GrpcMemoryNormalizer().normalize(auth_context)
 
                 state = {
                     "workflow_id": "wf_123",
@@ -113,33 +116,17 @@ class AssistantAiService(ai_runtime_pb2_grpc.AssistantAiServiceServicer):
 
                 result = asyncio.run(graph.ainvoke(state))
                 final_response = result.get("final_response")
-                event_type = (
-                    final_response.get("event_type")
-                    if isinstance(final_response, dict)
-                    else AssistantEventType.RUN_FAILED
-                )
-                message = (
-                    final_response.get("message")
-                    if isinstance(final_response, dict)
-                    else "An error occurred during processing."
-                )
-                options = (
-                    final_response.get("payload", {}).get("options", [])
-                    if isinstance(final_response, dict)
-                    else []
-                )
+              
 
-                print(f"Final response: {final_response}")
+                print(f"Final response:-------------------------->>>  {final_response}")
 
-                # print(f"Final response 11111  {event_type}")
-                # print(f"Final response:22222  {message}")
-                # print(f"Final response:33333  {options}")
+             
 
                 yield ai_runtime_pb2.AssistantStreamResponse(
                     event=ai_runtime_pb2.AssistantEvent(
-                        event_type=event_type,
-                        message=message,
-                        payload_json=json.dumps(options),
+                        event_type= final_response.get('event_type'),
+                        message=final_response.get('message'),
+                        payload_json=final_response.get('payload_json'),
                     )
                 )
 

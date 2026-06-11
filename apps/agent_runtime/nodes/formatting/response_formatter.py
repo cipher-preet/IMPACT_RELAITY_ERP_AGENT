@@ -23,22 +23,14 @@ class ResponseFormatter:
             return self._event(
                 "run_failed",
                 "Unable to complete the request.",
-                {
-                    "success": False,
-                    "workflow_id": state.get("workflow_id"),
-                    "results": normalized,
-                },
+                self._pure_results_payload(normalized),
             )
 
         if workflow_status == "PERMISSION_DENIED":
             return self._event(
                 "permission_denied",
                 "You do not have permission to perform this action.",
-                {
-                    "success": False,
-                    "workflow_id": state.get("workflow_id"),
-                    "results": normalized,
-                },
+                self._pure_results_payload(normalized),
             )
 
         waiting_event = self._detect_waiting_event(state, normalized)
@@ -49,13 +41,30 @@ class ResponseFormatter:
         return self._event(
             "final_message",
             self._make_success_message(state, normalized),
-            {
-                "success": True,
-                "workflow_id": state.get("workflow_id"),
-                "status": "COMPLETED",
-                "results": normalized,
-            },
+            self._pure_results_payload(normalized),
         )
+
+    def _pure_results_payload(self, normalized: Dict[str, Any]) -> Dict[str, Any]:
+
+        if len(normalized) == 1:
+            result = next(iter(normalized.values()))
+            return self._pure_single_payload(result)
+
+        output = {}
+
+        for task_id, result in normalized.items():
+            output[task_id] = self._pure_single_payload(result)
+
+        return output
+
+    def _pure_single_payload(self, result: Dict[str, Any]) -> Dict[str, Any]:
+
+        data = result.get("data")
+
+        if isinstance(data, dict):
+            return data
+
+        return {"value": data}
 
     def _normalize_all_results(self, state: GraphState) -> Dict[str, Any]:
 
@@ -167,21 +176,18 @@ class ResponseFormatter:
 
         for item in items:
             if isinstance(item, dict):
-                normalized.append(
-                    {
-                        "id": item.get("id"),
-                        "label": (
-                            item.get("label")
-                            or item.get("name")
-                            or item.get("title")
-                            or item.get("email")
-                            or item.get("id")
-                        ),
-                        "type": item.get("type"),
-                        "confidence": item.get("confidence"),
-                        "raw": item,
-                    }
+                normalized_item = dict(item)
+                normalized_item["id"] = item.get("id")
+                normalized_item["label"] = (
+                    item.get("label")
+                    or item.get("name")
+                    or item.get("title")
+                    or item.get("email")
+                    or item.get("id")
                 )
+                normalized_item["type"] = item.get("type")
+                normalized_item["confidence"] = item.get("confidence")
+                normalized.append(normalized_item)
             else:
                 normalized.append(
                     {
@@ -189,7 +195,6 @@ class ResponseFormatter:
                         "label": str(item),
                         "type": None,
                         "confidence": None,
-                        "raw": item,
                     }
                 )
 
@@ -228,7 +233,7 @@ class ResponseFormatter:
                     result.get("message") or "Please confirm to continue.",
                     {
                         "task_id": task_id,
-                        "ui": ui,
+                        "data": result.get("data", {}),
                     },
                 )
 
@@ -238,7 +243,7 @@ class ResponseFormatter:
                     result.get("message") or "I need more information to continue.",
                     {
                         "task_id": task_id,
-                        "ui": ui,
+                        "data": result.get("data", {}),
                     },
                 )
 
@@ -249,7 +254,6 @@ class ResponseFormatter:
                     {
                         "task_id": task_id,
                         "candidates": ui.get("items", []),
-                        "ui": ui,
                     },
                 )
 

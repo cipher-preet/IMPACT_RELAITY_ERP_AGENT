@@ -7,11 +7,9 @@ class HumanResponseNode:
 
         pending = state.get("pending_clarifications", [])
 
-        print(f"Pending human inputs: (((((((((((((( {pending}")
 
         latest = pending[-1] if pending else None
 
-        print(f"Latest human input: ))))))))))))))))))) {latest}")
 
         state["final_response"] = {
             "success": True,
