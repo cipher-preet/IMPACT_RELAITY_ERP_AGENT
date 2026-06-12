@@ -32,9 +32,11 @@ class GraphState(TypedDict):
     workflow_status: str
     active_graph: Optional[str]
     memory_context: Dict
+    resume_context: Optional[Dict[str, Any]]
+    execution_context: Dict[str, Any]
     retry_count: Dict[str, int]
 
-    final_response: None
+    final_response: Optional[Dict[str, Any]]
     
     checkpoint: Optional[Dict[str, Any]]
 

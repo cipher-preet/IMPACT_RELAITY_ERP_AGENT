@@ -21,14 +21,17 @@ class TaskDecomposer:
     async def decompose(
         self,
         query: str,
-        intent
+        intent,
+        memory_context: dict
     ) -> WorkflowPlan:
 
         response = await self.chain.ainvoke({
 
             "query": query,
 
-            "intent": intent.model_dump_json()
+            "intent": intent.model_dump_json(),
+
+            "memory_context": memory_context
         })
 
         response.workflow_id = str(

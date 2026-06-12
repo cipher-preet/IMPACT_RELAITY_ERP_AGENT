@@ -7,7 +7,9 @@ class PlannerNode:
     async def run(self, state: GraphState) -> GraphState:
 
         workflow_plan = await decomposer.decompose(
-            query=state["query"], intent=state["intent"]
+            query=state["query"],
+            intent=state["intent"],
+            memory_context=state.get("memory_context", {}),
         )
 
         state["workflow_id"] = workflow_plan.workflow_id

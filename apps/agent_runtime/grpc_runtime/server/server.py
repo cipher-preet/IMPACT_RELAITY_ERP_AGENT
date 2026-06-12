@@ -110,6 +110,8 @@ class AssistantAiService(ai_runtime_pb2_grpc.AssistantAiServiceServicer):
                     "workflow_status": "PENDING",
                     "active_graph": "erp",
                     "memory_context": {},
+                    "resume_context": None,
+                    "execution_context": {},
                     "retry_count": {},
                     "final_response": None,
                 }

@@ -18,7 +18,11 @@ async def classify_intent(payload: dict):
 
     intent = await runtime_manager.intent_classifier.classify(query)
     # print(f"Classified intent: {intent}")
-    workflow_plan = await decomposer.decompose(query=query, intent=intent)
+    workflow_plan = await decomposer.decompose(
+        query=query,
+        intent=intent,
+        memory_context={},
+    )
     # router = await graph_router.route(intent)
     auth_context = {
         "run_id": "3467b548-8117-4cc2-bc68-3ebe471f0163",
@@ -54,6 +58,8 @@ async def classify_intent(payload: dict):
             "workflow_status": "PENDING",
             "active_graph": "erp",
             "memory_context": {},
+            "resume_context": None,
+            "execution_context": {},
             "retry_count": {},
             "final_response": None,
         }

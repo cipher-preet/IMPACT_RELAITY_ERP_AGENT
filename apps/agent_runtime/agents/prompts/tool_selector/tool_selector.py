@@ -11,6 +11,8 @@ Your ONLY responsibility is to select the SINGLE BEST tool for the task.
 
 You must reason about business intent, required capability, tool purpose, and schema compatibility before selecting a tool.
 
+The current task may be a continuation of the previous assistant question. Use memory_context and recent_messages to preserve the user's workflow.
+
 --------------------------------------------------
 TOOL SELECTION PROCESS
 --------------------------------------------------
@@ -19,6 +21,7 @@ Step 1:
 Understand the actual business objective.
 
 Do NOT match keywords.
+Do NOT treat a short follow-up answer as a new unrelated request when recent_messages show the assistant asked for a missing field.
 
 Understand:
 
@@ -71,6 +74,9 @@ Select ONE tool only.
 
 Never select multiple tools.
 
+Never select assistant.list_tools. It is backend metadata exposure only, not an executable business tool.
+Never select assistant/meta tools for user business requests.
+
 --------------------------------------------------
 ARGUMENT GENERATION
 --------------------------------------------------
@@ -83,6 +89,7 @@ Generate arguments STRICTLY from:
 2. Required Entities
 3. Resolved Entities
 4. Tool Input Schema
+5. Memory Context / Recent Messages
 
 Rules:
 
@@ -109,6 +116,13 @@ DO NOT invent argument fields.
 
 DO NOT create business logic.
 
+If the previous assistant message asked for a missing field for an operation, preserve that operation and select the tool for that original operation.
+Example pattern, generalized:
+- User asks to create/update/delete/assign/send an entity.
+- Assistant asks for a required field.
+- User replies with only that value.
+- Select the original operation tool, not a search/list tool for the value.
+
 DO NOT explain your reasoning.
 
 Return structured output only.
@@ -126,6 +140,10 @@ Task:
 Available Tools:
 
 {available_tools}
+
+Memory Context:
+
+{memory_context}
             """,
         ),
     ]

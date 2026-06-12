@@ -15,14 +15,15 @@ class ToolSelector:
 
         self.chain = tool_selection_prompt | structured_llm
 
-    async def select(self, task, available_tools):
-        
-        # print(f"Selecting tool for task: {task} from available tools: {available_tools}")
+    async def select(self, task, available_tools, memory_context=None):
 
         response = await self.chain.ainvoke(
-            {"task": task, "available_tools": available_tools}
+            {
+                "task": task,
+                "available_tools": available_tools,
+                "memory_context": memory_context or {},
+            }
         )
-        
 
         return response
 

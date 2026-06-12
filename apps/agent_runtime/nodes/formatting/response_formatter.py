@@ -1,44 +1,64 @@
 import json
 from typing import Any, Dict, List, Optional
 
+from apps.agent_runtime.agents.prompts.formatting.response_message_prompt import (
+    response_message_prompt,
+)
+from apps.agent_runtime.agents.schemas.formatting.response_message import (
+    ResponseMessage,
+)
+from apps.agent_runtime.llms.openai.openai_client import openai_llm
 from apps.agent_runtime.state.graph_state import GraphState
 
 
 class ResponseFormatter:
 
+    def __init__(self):
+        structured_llm = openai_llm.with_structured_output(
+            ResponseMessage,
+            method="function_calling",
+        )
+        self.message_chain = response_message_prompt | structured_llm
+
     async def run(self, state: GraphState) -> GraphState:
         normalized = self._normalize_all_results(state)
-        event = self._build_event(state, normalized)
+        event = await self._build_event(state, normalized)
 
         state["final_response"] = event
         return state
 
-    def _build_event(
+    async def _build_event(
         self, state: GraphState, normalized: Dict[str, Any]
     ) -> Dict[str, Any]:
 
         workflow_status = state.get("workflow_status")
 
         if workflow_status == "FAILED":
-            return self._event(
+            return await self._event(
+                state,
+                normalized,
                 "run_failed",
                 "Unable to complete the request.",
                 self._pure_results_payload(normalized),
             )
 
         if workflow_status == "PERMISSION_DENIED":
-            return self._event(
+            return await self._event(
+                state,
+                normalized,
                 "permission_denied",
                 "You do not have permission to perform this action.",
                 self._pure_results_payload(normalized),
             )
 
-        waiting_event = self._detect_waiting_event(state, normalized)
+        waiting_event = await self._detect_waiting_event(state, normalized)
 
         if waiting_event:
             return waiting_event
 
-        return self._event(
+        return await self._event(
+            state,
+            normalized,
             "final_message",
             self._make_success_message(state, normalized),
             self._pure_results_payload(normalized),
@@ -210,14 +230,16 @@ class ResponseFormatter:
 
         return []
 
-    def _detect_waiting_event(
+    async def _detect_waiting_event(
         self, state: GraphState, normalized: Dict[str, Any]
     ) -> Optional[Dict[str, Any]]:
 
         if state.get("pending_human_input"):
             human_input = state["pending_human_input"]
 
-            return self._event(
+            return await self._event(
+                state,
+                normalized,
                 self._waiting_event_type(human_input),
                 human_input.get("message", "I need more information to continue."),
                 human_input,
@@ -228,17 +250,23 @@ class ResponseFormatter:
             ui = result.get("ui", {})
 
             if status == "requires_confirmation":
-                return self._event(
+                return await self._event(
+                    state,
+                    normalized,
                     "confirmation_required",
                     result.get("message") or "Please confirm to continue.",
                     {
                         "task_id": task_id,
+                        "waitingFor": "confirmation_required",
+                        "confirmationRequired": True,
                         "data": result.get("data", {}),
                     },
                 )
 
             if status == "requires_input":
-                return self._event(
+                return await self._event(
+                    state,
+                    normalized,
                     "follow_up_question",
                     result.get("message") or "I need more information to continue.",
                     {
@@ -248,7 +276,9 @@ class ResponseFormatter:
                 )
 
             if ui.get("type") == "options":
-                return self._event(
+                return await self._event(
+                    state,
+                    normalized,
                     "follow_up_question",
                     f"I found multiple matching {ui.get('title', 'results')}. Which one do you mean?",
                     {
@@ -278,9 +308,15 @@ class ResponseFormatter:
         if len(normalized) == 1:
             result = next(iter(normalized.values()))
             ui = result.get("ui", {})
+            data = result.get("data")
 
             if result.get("message"):
                 return result["message"]
+
+            data_message = self._message_from_data(data, ui)
+
+            if data_message:
+                return data_message
 
             if ui.get("type") == "detail":
                 return "Here are the details I found."
@@ -288,14 +324,196 @@ class ResponseFormatter:
             if ui.get("type") in ["list", "table"]:
                 return "Here are the results I found."
 
-        return "Request completed successfully."
+        completed = len(
+            [
+                result
+                for result in normalized.values()
+                if result.get("status") == "success"
+            ]
+        )
 
-    def _event(
-        self, event_type: str, message: str, payload: Dict[str, Any]
+        if completed:
+            return f"Completed {completed} task{'s' if completed != 1 else ''} successfully."
+
+        return "I completed the request."
+
+    def _message_from_data(self, data: Any, ui: Dict[str, Any]) -> Optional[str]:
+
+        if isinstance(data, dict):
+            list_key = self._find_list_key(data)
+
+            if list_key and isinstance(data.get(list_key), list):
+                items = data[list_key]
+                return self._message_from_items(items, list_key)
+
+            summary = self._summarize_dict(data)
+
+            if summary:
+                return f"I found {summary}."
+
+        if isinstance(data, list):
+            return self._message_from_items(
+                data,
+                ui.get("title") or "results",
+            )
+
+        if data not in (None, ""):
+            return str(data)
+
+        return None
+
+    def _message_from_items(self, items: List[Any], title: str) -> str:
+
+        count = len(items)
+        readable_title = str(title or "results").replace("_", " ")
+
+        if count == 0:
+            return f"I did not find any {readable_title}."
+
+        labels = []
+
+        for item in items[:3]:
+            if isinstance(item, dict):
+                label = (
+                    item.get("label")
+                    or item.get("name")
+                    or item.get("title")
+                    or item.get("email")
+                    or item.get("id")
+                )
+                if label:
+                    labels.append(str(label))
+            elif item not in (None, ""):
+                labels.append(str(item))
+
+        if labels:
+            return (
+                f"I found {count} {readable_title}: "
+                f"{', '.join(labels)}"
+                f"{'...' if count > len(labels) else ''}."
+            )
+
+        return f"I found {count} {readable_title}."
+
+    def _summarize_dict(self, data: Dict[str, Any]) -> str:
+
+        label = (
+            data.get("label")
+            or data.get("name")
+            or data.get("title")
+            or data.get("email")
+            or data.get("id")
+        )
+
+        details = []
+
+        for key, value in data.items():
+            if key in {"label", "name", "title", "id"}:
+                continue
+
+            if isinstance(value, (dict, list)) or value in (None, ""):
+                continue
+
+            details.append(f"{str(key).replace('_', ' ')} {value}")
+
+            if len(details) == 3:
+                break
+
+        if label and details:
+            return f"{label} with {', '.join(details)}"
+
+        if label:
+            return str(label)
+
+        if details:
+            return ", ".join(details)
+
+        return ""
+
+    async def _event(
+        self,
+        state: GraphState,
+        normalized: Dict[str, Any],
+        event_type: str,
+        message: str,
+        payload: Dict[str, Any],
     ) -> Dict[str, Any]:
+
+        payload = dict(payload or {})
+        payload_message = self._extract_payload_message(payload)
+        base_message = payload_message or message
+
+        dynamic_message = payload_message or await self._generate_message(
+            state=state,
+            normalized=normalized,
+            event_type=event_type,
+            base_message=base_message,
+            payload=payload,
+        )
+        final_message = dynamic_message or base_message
+        payload["message"] = final_message
 
         return {
             "event_type": event_type,
-            "message": message,
+            "message": final_message,
             "payload_json": json.dumps(payload, default=str),
         }
+
+    def _extract_payload_message(self, payload: Dict[str, Any]) -> Optional[str]:
+
+        message = payload.get("message")
+
+        if isinstance(message, str) and message.strip():
+            return message.strip()
+
+        data = payload.get("data")
+
+        if isinstance(data, dict):
+            message = data.get("message")
+
+            if isinstance(message, str) and message.strip():
+                return message.strip()
+
+        return None
+
+    async def _generate_message(
+        self,
+        state: GraphState,
+        normalized: Dict[str, Any],
+        event_type: str,
+        base_message: str,
+        payload: Dict[str, Any],
+    ) -> str:
+
+        try:
+            response = await self.message_chain.ainvoke(
+                {
+                    "query": state.get("query", ""),
+                    "workflow_status": state.get("workflow_status", ""),
+                    "event_type": event_type,
+                    "base_message": base_message,
+                    "payload": self._safe_json(payload),
+                    "normalized_results": self._safe_json(normalized),
+                }
+            )
+
+            print(
+                "this is the response form formatter messsafe in final response ",
+                response,
+            )
+            return response.message.strip()
+        except Exception as exc:
+            print(f"Response message generation failed: {exc}")
+            return base_message
+
+    def _safe_json(self, value: Any, max_length: int = 6000) -> str:
+
+        try:
+            serialized = json.dumps(value, default=str, ensure_ascii=False)
+        except Exception:
+            serialized = str(value)
+
+        if len(serialized) <= max_length:
+            return serialized
+
+        return serialized[:max_length] + "...[truncated]"

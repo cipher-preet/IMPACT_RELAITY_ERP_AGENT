@@ -9,7 +9,9 @@ from apps.agent_runtime.nodes.reasoning.intent_node import IntentNode
 from apps.agent_runtime.nodes.planning.planner_node import PlannerNode
 from apps.agent_runtime.nodes.execution.executor_node import ExecutorNode
 from apps.agent_runtime.nodes.formatting.response_formatter import ResponseFormatter
-from apps.agent_runtime.nodes.human_in_the_loop.human_response_node import HumanResponseNode
+from apps.agent_runtime.nodes.human_in_the_loop.human_response_node import (
+    HumanResponseNode,
+)
 
 
 class SupervisorGraph:
@@ -33,7 +35,14 @@ class SupervisorGraph:
 
         if (
             resume_context
-            and resume_context.get("type") == "clarification_resolved"
+            and resume_context.get("can_resume") is True
+            and resume_context.get("tool_name")
+        ):
+            return "executor"
+
+        if (
+            resume_context
+            and resume_context.get("resume_type") == "clarification_resolved"
         ):
             return "executor"
 

@@ -22,8 +22,11 @@ class ArgumentGenerator:
         query: str,
         tool_name: str,
         tool_schema: dict,
+        task: dict,
         resolved_entities: dict,
+        task_results: dict,
         auth_context: dict,
+        memory_context: dict,
     ):
 
         response = await self.chain.ainvoke(
@@ -31,8 +34,11 @@ class ArgumentGenerator:
                 "query": query,
                 "tool_name": tool_name,
                 "tool_schema": tool_schema,
+                "task": task,
                 "resolved_entities": resolved_entities,
+                "task_results": task_results,
                 "auth_context": auth_context,
+                "memory_context": memory_context,
             }
         )
 
