@@ -460,7 +460,7 @@ class TaskExecutor:
     async def execute(self, task: dict, state):
 
         auth_context = state.get("auth_context", {})
-        
+
         forced_tool_name = task.get("tool_name") or task.get("forced_tool_name")
 
         if self._is_blocked_tool(forced_tool_name):

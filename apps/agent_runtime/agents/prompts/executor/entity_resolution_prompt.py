@@ -1,6 +1,5 @@
 from langchain_core.prompts import ChatPromptTemplate
 
-
 entity_resolution_prompt = ChatPromptTemplate.from_messages(
     [
         (
