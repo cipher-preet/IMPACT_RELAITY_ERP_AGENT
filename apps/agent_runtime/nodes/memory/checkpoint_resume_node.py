@@ -16,6 +16,7 @@ from apps.agent_runtime.agents.prompts.memory.checkpoint_resume_prompt import (
 from apps.agent_runtime.agents.prompts.memory.confirmation_decision_prompt import (
     confirmation_decision_prompt,
 )
+from apps.agent_runtime.runtime.progress_events import emit_progress
 from apps.agent_runtime.tools.registry.tool_registry import tool_registry
 
 
@@ -518,6 +519,16 @@ class CheckpointResumeNode:
         )
 
         if pending_tool_context and pending_tool_context.get("confirmation_required"):
+            emit_progress(
+                state,
+                "analyzing",
+                "Checking the pending confirmation...",
+                {
+                    "stage": "confirmation_resume_check",
+                    "task_id": pending_tool_context.get("task_id"),
+                },
+            )
+
             confirmation_decision = await self._classify_confirmation_response(
                 latest_user_message=latest_user_message,
                 pending_task_context=pending_task_context,
@@ -529,6 +540,16 @@ class CheckpointResumeNode:
                 and not confirmation_decision.needs_user_input
                 and confirmation_decision.confirmed
             ):
+                emit_progress(
+                    state,
+                    "analyzing",
+                    "Continuing the confirmed task...",
+                    {
+                        "stage": "confirmation_confirmed",
+                        "task_id": pending_tool_context.get("task_id"),
+                    },
+                )
+
                 return self._apply_tool_resume_plan(
                     state=state,
                     pending_tool_context=pending_tool_context,
@@ -542,12 +563,32 @@ class CheckpointResumeNode:
                 and not confirmation_decision.needs_user_input
                 and not confirmation_decision.confirmed
             ):
+                emit_progress(
+                    state,
+                    "analyzing",
+                    "Cancelling the pending task as requested...",
+                    {
+                        "stage": "confirmation_cancelled",
+                        "task_id": pending_tool_context.get("task_id"),
+                    },
+                )
+
                 return self._cancel_pending_confirmation(
                     state=state,
                     pending_task_context=pending_task_context,
                 )
 
             if confirmation_decision.needs_user_input:
+                emit_progress(
+                    state,
+                    "analyzing",
+                    "I need confirmation before continuing.",
+                    {
+                        "stage": "confirmation_needs_input",
+                        "task_id": pending_tool_context.get("task_id"),
+                    },
+                )
+
                 state["waiting_for_user_input"] = True
                 state["workflow_status"] = "WAITING_FOR_USER"
                 state["pending_human_input"] = {
@@ -558,6 +599,16 @@ class CheckpointResumeNode:
                 return state
 
         if deterministic_payload and pending_tool_context:
+            emit_progress(
+                state,
+                "analyzing",
+                "Using your latest answer to continue the previous task...",
+                {
+                    "stage": "missing_input_resolved",
+                    "task_id": pending_tool_context.get("task_id"),
+                },
+            )
+
             return self._apply_tool_resume_plan(
                 state=state,
                 pending_tool_context=pending_tool_context,
@@ -586,6 +637,17 @@ class CheckpointResumeNode:
         )
 
         if decision.can_resume and not decision.needs_user_input:
+            emit_progress(
+                state,
+                "analyzing",
+                "Continuing the previous task...",
+                {
+                    "stage": "resume_detected",
+                    "resume_type": decision.resume_type,
+                    "task_id": decision.task_id,
+                },
+            )
+
             state["resume_context"] = {
                 "can_resume": True,
                 "resume_type": decision.resume_type,
@@ -681,6 +743,16 @@ class CheckpointResumeNode:
             "message": decision.user_question or "Please clarify your response.",
             "payload": pending_task_context,
         }
+
+        emit_progress(
+            state,
+            "analyzing",
+            "I need a little more information before continuing.",
+            {
+                "stage": "resume_needs_clarification",
+                "resume_type": decision.resume_type,
+            },
+        )
 
         state.setdefault("execution_logs", []).append(
             {

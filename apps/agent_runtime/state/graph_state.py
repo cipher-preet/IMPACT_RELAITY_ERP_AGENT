@@ -1,4 +1,5 @@
 from typing import Any
+from typing import Callable
 from typing import Dict
 from typing import List
 from typing import Optional
@@ -23,6 +24,7 @@ class GraphState(TypedDict):
     waiting_for_user_input: bool
     pending_human_input: Optional[Dict[str, Any]]
     human_input_history: List[Dict[str, Any]]
+    progress_callback: Optional[Callable[[Dict[str, Any]], None]]
 
     pending_clarifications: List[Dict]
     completed_tasks: List[str]

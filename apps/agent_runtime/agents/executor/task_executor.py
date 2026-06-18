@@ -5,7 +5,7 @@ from apps.agent_runtime.agents.executor.entity_resolver import entity_resolver
 from apps.agent_runtime.mcp.client.mcp_client import mcp_client
 from apps.agent_runtime.nodes.execution.tool_selector import tool_selector
 from apps.agent_runtime.tools.registry.tool_registry import tool_registry
-
+from apps.agent_runtime.runtime.progress_events import emit_progress
 
 class TaskExecutor:
 
@@ -33,6 +33,45 @@ class TaskExecutor:
     BLOCKED_TOOL_NAMES = {
         "assistant.list_tools",
     }
+
+    def _clean_text(self, value) -> str:
+        return " ".join(str(value or "").replace("_", " ").split())
+
+    def _task_summary(self, task: dict) -> str:
+        description = self._clean_text(task.get("description"))
+
+        if description:
+            return description.rstrip(".")
+
+        action = self._clean_text(task.get("action")).lower()
+        module = self._clean_text(task.get("module")).lower()
+
+        if action and module:
+            return f"{action} in {module}"
+
+        return action or module or "this action"
+
+    def _preparation_message(self, task: dict) -> str:
+        summary = self._task_summary(task)
+        required_entities = task.get("required_entities") or []
+
+        if required_entities:
+            readable_entities = ", ".join(
+                self._clean_text(entity).lower()
+                for entity in required_entities[:3]
+                if self._clean_text(entity)
+            )
+
+            if readable_entities:
+                return f"I am checking the required {readable_entities} for {summary}."
+
+        return f"I am preparing the details needed to {summary}."
+
+    def _run_message(self, task: dict) -> str:
+        return f"{self._task_summary(task).capitalize()}..."
+
+    def _completed_message(self, task: dict) -> str:
+        return f"{self._task_summary(task).capitalize()} completed."
 
     def _business_tools(self) -> list:
         return [
@@ -493,7 +532,7 @@ class TaskExecutor:
                 "result": {
                     "structuredContent": {
                         "status": "failed",
-                        "message": f"Selected tool '{selected_tool.name}' is not registered.",
+                        "message": "The required action is not available.",
                         "data": {},
                     }
                 }
@@ -506,6 +545,15 @@ class TaskExecutor:
                 "missing_fields": [],
             }
         else:
+            emit_progress(
+                state,
+                "analyzing",
+                self._preparation_message(task),
+                {
+                    "stage": "argument_generation",
+                    "task_id": task.get("task_id"),
+                },
+            )
             generated_arguments = await argument_generator.generate_arguments(
                 query=state.get("query"),
                 tool_name=selected_tool.name,
@@ -516,9 +564,6 @@ class TaskExecutor:
                 auth_context=auth_context,
                 memory_context=state.get("memory_context", {}),
             )
-
-        print("this is selcted tool name ----->>> ", selected_tool.name)
-
         tool_schema = get_tool_info.get("inputSchema") or {}
         arguments = self._sanitize_arguments(
             generated_arguments.get("arguments", {}),
@@ -553,12 +598,32 @@ class TaskExecutor:
                 arguments=arguments,
             )
 
+        emit_progress(
+            state,
+            "tool_start",
+            self._run_message(task),
+            {
+                "stage": "tool_call_started",
+                "task_id": task.get("task_id"),
+            },
+        )
+
         result = await mcp_client.call_tool(
             tool_name=selected_tool.name,
             arguments=arguments,
             run_id=auth_context.get("run_id"),
             agency_id=auth_context.get("agency_id"),
             confirmed=self._is_confirmed_task(task),
+        )
+
+        emit_progress(
+            state,
+            "tool_result",
+            self._completed_message(task),
+            {
+                "stage": "tool_call_completed",
+                "task_id": task.get("task_id"),
+            },
         )
 
         return self._with_execution_context(
