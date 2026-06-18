@@ -9,6 +9,7 @@ from apps.agent_runtime.agents.schemas.formatting.response_message import (
 )
 from apps.agent_runtime.llms.openai.openai_client import openai_llm
 from apps.agent_runtime.state.graph_state import GraphState
+from apps.agent_runtime.runtime.progress_events import emit_progress
 
 
 class ResponseFormatter:
@@ -21,6 +22,14 @@ class ResponseFormatter:
         self.message_chain = response_message_prompt | structured_llm
 
     async def run(self, state: GraphState) -> GraphState:
+        emit_progress(
+            state,
+            "analyzing",
+            "Preparing the response...",
+            {
+                "stage": "response_formatting",
+            },
+        )
         normalized = self._normalize_all_results(state)
         event = await self._build_event(state, normalized)
 

@@ -4,6 +4,9 @@ import os
 import grpc
 import asyncio
 
+import queue
+import threading
+
 from apps.agent_runtime.agents.constants.event_types import AssistantEventType
 from apps.agent_runtime.grpc_runtime.generated import (
     ai_runtime_pb2,
@@ -13,8 +16,9 @@ from apps.agent_runtime.grpc_runtime.generated import (
 from apps.agent_runtime.graphs.supervisor_graph.graph import SupervisorGraph
 from apps.agent_runtime.runtime.runtime_manager import RuntimeManager
 
-from apps.agent_runtime.nodes.memory.normalizers.grpc_memory_normalizer import GrpcMemoryNormalizer
-
+from apps.agent_runtime.nodes.memory.normalizers.grpc_memory_normalizer import (
+    GrpcMemoryNormalizer,
+)
 
 runtime_manager = RuntimeManager()
 
@@ -27,6 +31,19 @@ def safe_json_loads(value, default):
         return json.loads(value)
     except Exception:
         return default
+
+
+def build_stream_event(event_type: str, message: str, payload: dict | None = None):
+    payload = payload or {}
+    payload["message"] = message
+
+    return ai_runtime_pb2.AssistantStreamResponse(
+        event=ai_runtime_pb2.AssistantEvent(
+            event_type=event_type,
+            message=message,
+            payload_json=json.dumps(payload, default=str),
+        )
+    )
 
 
 class AssistantAiService(ai_runtime_pb2_grpc.AssistantAiServiceServicer):
@@ -84,11 +101,11 @@ class AssistantAiService(ai_runtime_pb2_grpc.AssistantAiServiceServicer):
                     "recent_messages_json": json.dumps(recent_messages or []),
                     "access_json": json.dumps(access or {}),
                 }
-                
+
                 print("this is toal payload i print @@@@@@@@@@@@@@@@ ", auth_context)
 
                 graph = SupervisorGraph.build()
-                
+
                 # memory = GrpcMemoryNormalizer().normalize(auth_context)
 
                 state = {
@@ -116,21 +133,73 @@ class AssistantAiService(ai_runtime_pb2_grpc.AssistantAiServiceServicer):
                     "final_response": None,
                 }
 
-                result = asyncio.run(graph.ainvoke(state))
-                final_response = result.get("final_response")
-              
+                event_queue = queue.Queue()
 
-                print(f"Final response:-------------------------->>>  {final_response}")
+                def progress_callback(event: dict):
+                    event_queue.put(event)
 
-             
+                state["progress_callback"] = progress_callback
 
-                yield ai_runtime_pb2.AssistantStreamResponse(
-                    event=ai_runtime_pb2.AssistantEvent(
-                        event_type= final_response.get('event_type'),
-                        message=final_response.get('message'),
-                        payload_json=final_response.get('payload_json'),
+                def run_graph():
+                    try:
+                        result = asyncio.run(graph.ainvoke(state))
+                        event_queue.put(
+                            {
+                                "event_type": "__final__",
+                                "payload": result,
+                                "message": "",
+                            }
+                        )
+                    except Exception as exc:
+                        print(f"Assistant graph execution failed: {exc}")
+                        event_queue.put(
+                            {
+                                "event_type": AssistantEventType.RUN_FAILED.value,
+                                "message": "Unable to complete the request.",
+                                "payload": {
+                                    "run_id": run.run_id,
+                                    "stage": "graph_execution",
+                                    "terminal": True,
+                                },
+                            }
+                        )
+
+                thread = threading.Thread(target=run_graph, daemon=True)
+                thread.start()
+
+                while True:
+                    event = event_queue.get()
+                    event_type = event.get("event_type")
+
+                    if event_type == "__final__":
+                        result = event.get("payload") or {}
+                        final_response = result.get("final_response") or {}
+
+                        yield ai_runtime_pb2.AssistantStreamResponse(
+                            event=ai_runtime_pb2.AssistantEvent(
+                                event_type=final_response.get("event_type"),
+                                message=final_response.get("message"),
+                                payload_json=final_response.get("payload_json"),
+                            )
+                        )
+                        break
+
+                    yield build_stream_event(
+                        event_type=event_type,
+                        message=event.get("message") or "",
+                        payload={
+                            "run_id": run.run_id,
+                            **(event.get("payload") or {}),
+                        },
                     )
-                )
+
+                    if event_type in {
+                        AssistantEventType.RUN_FAILED.value,
+                        AssistantEventType.RUN_CANCELLED.value,
+                    }:
+                        break
+
+                return
 
 
 def start_grpc_server():
