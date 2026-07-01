@@ -89,3 +89,16 @@ async def test_mcp_connection():
     except Exception as error:
 
         return {"success": False, "message": str(error)}
+
+
+
+
+# ------------------- Bulk upload API -----------------------------------
+@router.post("/bulkupload")
+async def bulkUpload():
+    try:
+        pass
+        
+        
+    except Exception as error:
+        return {"success":False, "message":str(error)}
