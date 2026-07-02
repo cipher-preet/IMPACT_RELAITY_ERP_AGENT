@@ -23,6 +23,31 @@ jobs:
       - name: Install sshpass
         run: sudo apt-get update && sudo apt-get install -y sshpass
 
+      - name: Validate deploy secrets
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_PASSWORD: ${{ secrets.SSH_PASSWORD }}
+          SSH_PORT: ${{ secrets.SSH_PORT }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+        run: |
+          missing=()
+          for name in SSH_HOST SSH_USER SSH_PASSWORD DEPLOY_PATH; do
+            if [ -z "${!name}" ]; then
+              missing+=("$name")
+            fi
+          done
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "ERROR: Missing GitHub secrets: ${missing[*]}"
+            echo "Add them under Settings -> Secrets and variables -> Actions."
+            exit 1
+          fi
+          PORT="${SSH_PORT:-22}"
+          if ! [[ "$PORT" =~ ^[0-9]+$ ]]; then
+            echo "ERROR: SSH_PORT must be a number (leave the secret unset to use 22)."
+            exit 1
+          fi
+
       - name: Configure SSH known hosts
         env:
           SSH_HOST: ${{ secrets.SSH_HOST }}
@@ -30,8 +55,20 @@ jobs:
         run: |
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
+          HOST="${SSH_HOST#*@}"
+          HOST="${HOST#*://}"
+          HOST="${HOST%%/*}"
           PORT="${SSH_PORT:-22}"
-          ssh-keyscan -p "$PORT" -H "$SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          echo "Fetching host key for ${HOST}:${PORT}"
+          if ! ssh-keyscan -T 10 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts; then
+            echo "ERROR: Could not reach ${HOST}:${PORT} from GitHub Actions."
+            echo "Check SSH_HOST, SSH_PORT, server firewall, and that sshd is running."
+            exit 1
+          fi
+          if [ ! -s ~/.ssh/known_hosts ]; then
+            echo "ERROR: ssh-keyscan returned no host keys for ${HOST}:${PORT}."
+            exit 1
+          fi
 
       - name: Sync code to server
         env:
@@ -41,6 +78,9 @@ jobs:
           SSH_PORT: ${{ secrets.SSH_PORT }}
           DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
         run: |
+          HOST="${SSH_HOST#*@}"
+          HOST="${HOST#*://}"
+          HOST="${HOST%%/*}"
           PORT="${SSH_PORT:-22}"
           export SSHPASS="$SSH_PASSWORD"
           sshpass -e rsync -avz --delete \
@@ -60,7 +100,7 @@ jobs:
             --exclude '*.log' \
             --exclude '.DS_Store' \
             -e "ssh -p ${PORT} -o StrictHostKeyChecking=yes -o PreferredAuthentications=password -o PubkeyAuthentication=no" \
-            ./ "${SSH_USER}@${SSH_HOST}:${DEPLOY_PATH}/"
+            ./ "${SSH_USER}@${HOST}:${DEPLOY_PATH}/"
 
       - name: Run remote deploy script
         env:
@@ -70,11 +110,14 @@ jobs:
           SSH_PORT: ${{ secrets.SSH_PORT }}
           DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
         run: |
+          HOST="${SSH_HOST#*@}"
+          HOST="${HOST#*://}"
+          HOST="${HOST%%/*}"
           PORT="${SSH_PORT:-22}"
           export SSHPASS="$SSH_PASSWORD"
           sshpass -e ssh -p "$PORT" \
             -o StrictHostKeyChecking=yes \
             -o PreferredAuthentications=password \
             -o PubkeyAuthentication=no \
-            "${SSH_USER}@${SSH_HOST}" \
+            "${SSH_USER}@${HOST}" \
             "cd '${DEPLOY_PATH}' && chmod +x scripts/deploy.sh && bash scripts/deploy.sh"
