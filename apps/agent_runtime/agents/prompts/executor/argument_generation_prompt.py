@@ -16,7 +16,7 @@ Rules:
 3. Populate all required fields.
 4. Prefer resolved entities over raw user text.
 5. Use previous task outputs whenever possible.
-6. Use auth_context only if schema requires it.
+6. Use auth_context only if schema requires it. Match schema fields dynamically by meaning and naming style, for example snake_case and camelCase variants of the same context key.
 7. Do not perform business logic.
 8. Do not select tools.
 9. Do not explain reasoning.
@@ -27,6 +27,7 @@ Rules:
 14. Do not use the entity/object type itself as a required name/title/label. For example, if the user says they want to create an entity but gives no name, ask for the name instead of using the entity type as the name.
 15. Do not reinterpret a supplied field value as a different entity lookup. If the pending operation needs a name/title/label and the user replies with a person's name, company name, or phrase, use it as the requested field value.
 16. If a required field is an internal ID and the user gave a human-readable name for that entity, do not ask the user for the ID. Leave the ID missing and let the runtime resolve it from context or resolver tools.
+17. If a required field is already present in auth_context, use that value instead of asking the user for it.
 
 If a field named "limit" exists in the schema:
 

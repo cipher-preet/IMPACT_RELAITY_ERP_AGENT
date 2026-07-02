@@ -19,7 +19,6 @@ class LoadMemoryNode:
             return default
 
     async def run(self, state: GraphState) -> GraphState:
-        print("LoadMemoryNode input state:", state)
 
         raw_memory = state.get("memory_context") or {}
 
@@ -78,6 +77,5 @@ class LoadMemoryNode:
             }
         )
 
-        print("LoadMemoryNode normalized memory:", state["memory_context"])
 
         return state

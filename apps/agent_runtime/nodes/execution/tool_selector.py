@@ -1,4 +1,4 @@
-from apps.agent_runtime.llms.openai.openai_client import openai_llm
+from apps.agent_runtime.llms.openai.openai_client import openai_planning_llm
 from apps.agent_runtime.agents.schemas.supervisor.tool_selector_schema import (
     ToolMetadata,
 )
@@ -11,15 +11,16 @@ class ToolSelector:
 
     def __init__(self):
 
-        structured_llm = openai_llm.with_structured_output(ToolMetadata)
+        structured_llm = openai_planning_llm.with_structured_output(ToolMetadata)
 
         self.chain = tool_selection_prompt | structured_llm
 
-    async def select(self, task, available_tools, memory_context=None):
+    async def select(self, task, available_tools, memory_context=None, query=None):
 
         response = await self.chain.ainvoke(
             {
                 "task": task,
+                "query": query or "",
                 "available_tools": available_tools,
                 "memory_context": memory_context or {},
             }

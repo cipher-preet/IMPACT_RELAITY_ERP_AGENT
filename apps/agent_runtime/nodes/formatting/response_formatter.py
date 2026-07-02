@@ -251,7 +251,7 @@ class ResponseFormatter:
                 normalized,
                 self._waiting_event_type(human_input),
                 human_input.get("message", "I need more information to continue."),
-                human_input,
+                self._clean_waiting_payload(human_input),
             )
 
         for task_id, result in normalized.items():
@@ -298,9 +298,82 @@ class ResponseFormatter:
 
         return None
 
+    def _clean_waiting_payload(self, human_input: Dict[str, Any]) -> Dict[str, Any]:
+        data = human_input.get("data")
+        extracted_data = self._extract_tool_context(data)
+
+        if extracted_data:
+            data = extracted_data
+        elif not isinstance(data, dict):
+            data = self._extract_tool_context(human_input)
+
+        payload = {
+            "type": human_input.get("type") or "follow_up_question",
+            "waitingFor": self._waiting_event_type(human_input),
+            "confirmationRequired": self._waiting_event_type(human_input)
+            == "confirmation_required",
+        }
+
+        task_id = human_input.get("task_id") or data.get("task_id")
+
+        if task_id:
+            payload["task_id"] = task_id
+
+        if data:
+            payload["data"] = data
+
+        return payload
+
+    def _extract_tool_context(self, value: Any) -> Dict[str, Any]:
+        if isinstance(value, dict):
+            data = value.get("data")
+
+            if isinstance(data, dict) and (
+                data.get("tool_name")
+                or data.get("missing_fields")
+                or data.get("provided_arguments")
+            ):
+                return {
+                    key: data[key]
+                    for key in (
+                        "tool_name",
+                        "missing_fields",
+                        "provided_arguments",
+                        "task_id",
+                    )
+                    if key in data
+                }
+
+            if (
+                value.get("tool_name")
+                or value.get("missing_fields")
+                or value.get("provided_arguments")
+            ):
+                return {
+                    key: value[key]
+                    for key in (
+                        "tool_name",
+                        "missing_fields",
+                        "provided_arguments",
+                        "task_id",
+                    )
+                    if key in value
+                }
+
+            for key in ("payload", "human_input"):
+                child = value.get(key)
+
+                if isinstance(child, dict):
+                    found = self._extract_tool_context(child)
+
+                    if found:
+                        return found
+
+        return {}
+
     def _waiting_event_type(self, human_input: Dict[str, Any]) -> str:
 
-        input_type = human_input.get("type")
+        input_type = str(human_input.get("type") or "").upper()
 
         if input_type in ["CLARIFICATION", "OPTION_SELECTION", "FOLLOW_UP_QUESTION"]:
             return "follow_up_question"

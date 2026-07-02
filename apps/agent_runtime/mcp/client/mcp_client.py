@@ -1,4 +1,5 @@
 import uuid
+import re
 import httpx
 
 from typing import Any
@@ -60,6 +61,25 @@ class MCPClient:
         confirmed: bool = False,
     ):
 
+        arguments = dict(arguments or {})
+
+        if agency_id and not any(
+            str(key).replace("_", "").lower() == "agencyid"
+            for key in arguments
+        ):
+            arguments["agencyId"] = agency_id
+
+        tool_tokens = {
+            token.lower()
+            for token in re.split(r"[^a-zA-Z0-9]+", str(tool_name or ""))
+            if token
+        }
+
+        if agency_id and "agency" in tool_tokens and not any(
+            str(key).replace("_", "").lower() in {"id", "uuid", "agencyid"}
+            for key in arguments
+        ):
+            arguments["id"] = agency_id
 
         payload = {
             "jsonrpc": "2.0",

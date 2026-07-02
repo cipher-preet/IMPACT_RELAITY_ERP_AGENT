@@ -2,7 +2,7 @@ import json
 import re
 from typing import Any, Dict, Optional
 
-from apps.agent_runtime.llms.openai.openai_client import openai_llm
+from apps.agent_runtime.llms.openai.openai_client import openai_planning_llm
 
 
 from apps.agent_runtime.state.graph_state import GraphState
@@ -24,12 +24,12 @@ class CheckpointResumeNode:
 
     def __init__(self):
 
-        structured_llm = openai_llm.with_structured_output(
+        structured_llm = openai_planning_llm.with_structured_output(
             CheckpointResumeDecision,
             method="function_calling",
         )
         self.chain = checkpoint_resume_prompt | structured_llm
-        confirmation_llm = openai_llm.with_structured_output(
+        confirmation_llm = openai_planning_llm.with_structured_output(
             ConfirmationDecision,
             method="function_calling",
         )
@@ -41,6 +41,68 @@ class CheckpointResumeNode:
             for tool in tool_registry.get_all_tools()
             if not str(tool.get("name", "")).startswith("assistant.")
         ]
+
+    def _is_executable_tool_name(self, tool_name: str) -> bool:
+        if not tool_name:
+            return False
+
+        if str(tool_name).startswith("assistant."):
+            return False
+
+        return tool_registry.exists(tool_name)
+
+    def _context_key(self, key: str) -> str:
+        return re.sub(r"[^a-z0-9]", "", str(key or "").lower())
+
+    def _context_tokens(self, value: str) -> list:
+        ignored_tokens = {
+            "add",
+            "call",
+            "create",
+            "delete",
+            "detail",
+            "details",
+            "find",
+            "get",
+            "list",
+            "remove",
+            "search",
+            "set",
+            "tool",
+            "tools",
+            "update",
+        }
+        tokens = re.split(r"[^a-zA-Z0-9]+", str(value or ""))
+
+        return [
+            token.lower()
+            for token in tokens
+            if token and token.lower() not in ignored_tokens
+        ]
+
+    def _context_key_candidates(
+        self,
+        field_name: str,
+        context_tokens: list = None,
+    ) -> list:
+        normalized = self._context_key(field_name)
+        candidates = [normalized]
+
+        if normalized.endswith("uuid"):
+            without_uuid = normalized[:-4]
+            candidates.append(without_uuid)
+
+            if without_uuid and not without_uuid.endswith("id"):
+                candidates.append(f"{without_uuid}id")
+
+        if normalized in {"id", "uuid"}:
+            for token in context_tokens or []:
+                token_key = self._context_key(token)
+
+                if token_key:
+                    candidates.append(f"{token_key}id")
+
+        return list(dict.fromkeys(candidate for candidate in candidates if candidate))
 
     async def _classify_confirmation_response(
         self,
@@ -225,15 +287,105 @@ class CheckpointResumeNode:
             "sessionid": memory.get("session_id"),
         }
         arguments = {}
+        context_tokens = self._context_tokens(tool_name)
 
         for field_name in properties:
-            normalized = str(field_name).replace("_", "").lower()
-            value = auth_values.get(normalized)
+            value = None
+
+            for candidate_key in self._context_key_candidates(
+                field_name,
+                context_tokens,
+            ):
+                if candidate_key in auth_values:
+                    value = auth_values[candidate_key]
+                    break
 
             if value not in (None, ""):
                 arguments[field_name] = value
 
         return arguments
+
+    def _auth_value_for_field(
+        self,
+        field_name: str,
+        memory: Dict[str, Any],
+        tool_name: str = "",
+    ) -> Any:
+        auth_values = {
+            "agencyid": memory.get("agency_id"),
+            "userid": memory.get("user_id"),
+            "runid": memory.get("run_id"),
+            "sessionid": memory.get("session_id"),
+        }
+
+        for candidate_key in self._context_key_candidates(
+            field_name,
+            self._context_tokens(tool_name),
+        ):
+            value = auth_values.get(candidate_key)
+
+            if value not in (None, ""):
+                return value
+
+        return None
+
+    def _has_argument_value(
+        self,
+        arguments: Dict[str, Any],
+        field_name: str,
+        tool_name: str = "",
+    ) -> bool:
+        field_keys = set(
+            self._context_key_candidates(
+                field_name,
+                self._context_tokens(tool_name),
+            )
+        )
+
+        for key, value in arguments.items():
+            if value in (None, ""):
+                continue
+
+            if self._context_key(key) in field_keys:
+                return True
+
+        return False
+
+    def _hydrate_pending_tool_context_from_auth(
+        self,
+        pending_tool_context: Optional[Dict[str, Any]],
+        memory: Dict[str, Any],
+    ) -> Optional[Dict[str, Any]]:
+        if not pending_tool_context:
+            return pending_tool_context
+
+        tool_name = pending_tool_context.get("tool_name")
+
+        if not tool_name or not tool_registry.exists(tool_name):
+            return pending_tool_context
+
+        hydrated = dict(pending_tool_context)
+        provided_arguments = dict(hydrated.get("provided_arguments") or {})
+        provided_arguments.update(self._auth_arguments_for_tool(tool_name, memory))
+
+        remaining_missing = []
+
+        for field_name in hydrated.get("missing_fields") or []:
+            if self._has_argument_value(provided_arguments, field_name, tool_name):
+                continue
+
+            auth_value = self._auth_value_for_field(field_name, memory, tool_name)
+
+            if auth_value not in (None, ""):
+                provided_arguments[field_name] = auth_value
+                continue
+
+            remaining_missing.append(field_name)
+
+        hydrated["provided_arguments"] = provided_arguments
+        hydrated["missing_fields"] = remaining_missing
+
+        return hydrated
 
     def _build_pending_tool_context_from_decision(
         self,
@@ -497,6 +649,16 @@ class CheckpointResumeNode:
         has_pending_task_context = bool(pending_task_context)
         pending_tool_context = self._find_pending_tool_context(pending_task_context)
 
+        if pending_tool_context and not self._is_executable_tool_name(
+            pending_tool_context.get("tool_name")
+        ):
+            pending_tool_context = None
+
+        pending_tool_context = self._hydrate_pending_tool_context_from_auth(
+            pending_tool_context,
+            memory,
+        )
+
         if not pending_task_context and not recent_messages:
             state["resume_context"] = None
             state["workflow_status"] = "RUNNING"
@@ -512,6 +674,45 @@ class CheckpointResumeNode:
 
         if pending_task_context is None:
             pending_task_context = {}
+
+        if has_pending_task_context and not pending_tool_context:
+            state["resume_context"] = {
+                "can_resume": False,
+                "resume_type": "ignored_stale_context",
+                "reason": "Pending context did not contain an executable tool call.",
+                "pending_task_context": None,
+            }
+            state["workflow_status"] = "RUNNING"
+            state.setdefault("execution_logs", []).append(
+                {
+                    "node": "CheckpointResumeNode",
+                    "status": "IGNORED_STALE_PENDING_CONTEXT",
+                }
+            )
+            return state
+
+        if (
+            pending_tool_context
+            and pending_tool_context.get("provided_arguments")
+            and not pending_tool_context.get("missing_fields")
+            and not pending_tool_context.get("confirmation_required")
+        ):
+            emit_progress(
+                state,
+                "analyzing",
+                "Continuing with the existing context...",
+                {
+                    "stage": "missing_input_resolved_from_context",
+                    "task_id": pending_tool_context.get("task_id"),
+                },
+            )
+
+            return self._apply_tool_resume_plan(
+                state=state,
+                pending_tool_context=pending_tool_context,
+                resolved_payload={},
+                reason="Required context was already available.",
+            )
 
         deterministic_payload = self._deterministic_missing_input_payload(
             latest_user_message=latest_user_message,
@@ -594,7 +795,7 @@ class CheckpointResumeNode:
                 state["pending_human_input"] = {
                     "type": "CONFIRMATION",
                     "message": "Please confirm whether you want me to proceed.",
-                    "payload": pending_task_context,
+                    "data": pending_tool_context or pending_task_context,
                 }
                 return state
 
@@ -741,7 +942,7 @@ class CheckpointResumeNode:
         state["pending_human_input"] = {
             "type": "follow_up_question",
             "message": decision.user_question or "Please clarify your response.",
-            "payload": pending_task_context,
+            "data": pending_tool_context or pending_task_context,
         }
 
         emit_progress(

@@ -102,7 +102,7 @@ class AssistantAiService(ai_runtime_pb2_grpc.AssistantAiServiceServicer):
                     "access_json": json.dumps(access or {}),
                 }
 
-                print("this is toal payload i print @@@@@@@@@@@@@@@@ ", auth_context)
+                print("Received RunAssistant request with auth_context:", auth_context)
 
                 graph = SupervisorGraph.build()
 

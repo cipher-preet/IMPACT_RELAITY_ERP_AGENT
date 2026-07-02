@@ -22,6 +22,7 @@ Understand the actual business objective.
 
 Do NOT match keywords.
 Do NOT treat a short follow-up answer as a new unrelated request when recent_messages show the assistant asked for a missing field.
+Use the original user query as the source of truth when the decomposed task is vague.
 
 Understand:
 
@@ -45,12 +46,14 @@ For each tool evaluate:
 
 3. Action Match
    Does this tool support the requested action?
+   Treat action mismatch as disqualifying. A read/list/search tool must not be selected for create/update/delete/assign/send/approve workflows unless the task is only resolving an identifier.
 
 4. Schema Match
    Can required arguments be generated from available information?
 
 5. Specificity
    Prefer highly specialized tools over generic tools.
+   Prefer a domain-specific write/action tool over any generic read/search/list tool for business operations.
 
 --------------------------------------------------
 
@@ -61,11 +64,20 @@ Prefer:
 
 Exact Capability Match
 >
+Exact Action Match
+>
 Entity Match
 >
-Action Match
+Schema Match
 >
-Generic Search Tools
+Generic Search/List Tools
+
+Reject:
+
+- Tools that only retrieve data when the user asked to change data.
+- Tools for a different business entity, even if their name shares keywords.
+- Tools whose input schema cannot support the requested operation.
+- Metadata, diagnostic, assistant, or list-tools utilities.
 
 --------------------------------------------------
 
@@ -110,6 +122,8 @@ DO NOT select tools because they contain matching keywords.
 
 DO NOT assume functionality.
 
+DO NOT downgrade a write/action request into a search/list/get tool just because an ID or name is missing. Select the write/action tool; the runtime resolves missing IDs later.
+
 DO NOT invent tool names.
 
 DO NOT invent argument fields.
@@ -136,6 +150,10 @@ The selected tool must be the tool most likely to successfully execute the task.
 Task:
 
 {task}
+
+Original User Query:
+
+{query}
 
 Available Tools:
 

@@ -4,13 +4,13 @@ from apps.agent_runtime.agents.prompts.executor.entity_resolution_prompt import 
 from apps.agent_runtime.agents.schemas.executor.entity_resolution import (
     EntityResolutionPlan,
 )
-from apps.agent_runtime.llms.openai.openai_client import openai_llm
+from apps.agent_runtime.llms.openai.openai_client import openai_planning_llm
 
 
 class EntityResolver:
 
     def __init__(self):
-        structured_llm = openai_llm.with_structured_output(
+        structured_llm = openai_planning_llm.with_structured_output(
             EntityResolutionPlan,
             method="function_calling",
         )

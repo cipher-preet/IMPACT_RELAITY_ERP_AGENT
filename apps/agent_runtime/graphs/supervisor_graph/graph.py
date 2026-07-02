@@ -80,7 +80,6 @@ class SupervisorGraph:
         graph.add_node("response", ResponseFormatter().run)
 
         graph.set_entry_point("load_memory")
-
         graph.add_edge("load_memory", "checkpoint_resume")
 
         graph.add_conditional_edges(

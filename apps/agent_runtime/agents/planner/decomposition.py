@@ -1,6 +1,6 @@
 import uuid
 
-from apps.agent_runtime.llms.openai.openai_client import openai_llm
+from apps.agent_runtime.llms.openai.openai_client import openai_planning_llm
 
 from apps.agent_runtime.agents.schemas.Planner.workflow_planner import (
     WorkflowPlan
@@ -15,7 +15,7 @@ class TaskDecomposer:
 
     def __init__(self):
         
-        structured_llm = openai_llm.with_structured_output(WorkflowPlan)
+        structured_llm = openai_planning_llm.with_structured_output(WorkflowPlan)
         self.chain = decomposition_prompt | structured_llm
 
     async def decompose(

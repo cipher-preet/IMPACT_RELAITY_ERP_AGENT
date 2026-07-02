@@ -1,3 +1,4 @@
+import re
 from types import SimpleNamespace
 
 from apps.agent_runtime.agents.executor.argument_generator import argument_generator
@@ -113,6 +114,148 @@ class TaskExecutor:
         properties = schema.get("properties")
 
         return properties if isinstance(properties, dict) else {}
+
+    def _context_key(self, key: str) -> str:
+        return re.sub(r"[^a-z0-9]", "", str(key or "").lower())
+
+    def _context_tokens(self, value: str) -> list:
+        ignored_tokens = {
+            "add",
+            "call",
+            "create",
+            "delete",
+            "detail",
+            "details",
+            "find",
+            "get",
+            "list",
+            "remove",
+            "search",
+            "set",
+            "tool",
+            "tools",
+            "update",
+        }
+        tokens = re.split(r"[^a-zA-Z0-9]+", str(value or ""))
+
+        return [
+            token.lower()
+            for token in tokens
+            if token and token.lower() not in ignored_tokens
+        ]
+
+    def _context_key_candidates(
+        self,
+        field_name: str,
+        context_tokens: list = None,
+    ) -> list:
+        normalized = self._context_key(field_name)
+        candidates = [normalized]
+
+        if normalized.endswith("uuid"):
+            without_uuid = normalized[:-4]
+            candidates.append(without_uuid)
+
+            if without_uuid and not without_uuid.endswith("id"):
+                candidates.append(f"{without_uuid}id")
+
+        if normalized in {"id", "uuid"}:
+            for token in context_tokens or []:
+                token_key = self._context_key(token)
+
+                if token_key:
+                    candidates.append(f"{token_key}id")
+
+        return list(dict.fromkeys(candidate for candidate in candidates if candidate))
+
+    def _flatten_context(self, value, prefix: str = "") -> dict:
+        flattened = {}
+
+        if isinstance(value, dict):
+            for key, child in value.items():
+                if child in (None, ""):
+                    continue
+
+                full_key = f"{prefix}.{key}" if prefix else str(key)
+                flattened[self._context_key(full_key)] = child
+                flattened[self._context_key(key)] = child
+
+                if isinstance(child, dict):
+                    flattened.update(self._flatten_context(child, full_key))
+
+            return flattened
+
+        return flattened
+
+    def _context_lookup(self, *contexts: dict) -> dict:
+        lookup = {}
+
+        for context in contexts:
+            if isinstance(context, dict):
+                lookup.update(self._flatten_context(context))
+
+        return lookup
+
+    def _apply_context_defaults(
+        self,
+        arguments: dict,
+        schema: dict,
+        lookup: dict,
+        context_tokens: list = None,
+    ) -> dict:
+        if not isinstance(arguments, dict):
+            arguments = {}
+
+        properties = self._schema_properties(schema)
+
+        if not properties:
+            return arguments
+
+        hydrated = dict(arguments)
+
+        for field_name, field_schema in properties.items():
+            current_value = hydrated.get(field_name)
+
+            if isinstance(field_schema, dict) and field_schema.get("type") == "object":
+                nested_value = current_value if isinstance(current_value, dict) else {}
+                nested_value = self._apply_context_defaults(
+                    nested_value,
+                    field_schema,
+                    lookup,
+                    context_tokens,
+                )
+
+                if nested_value:
+                    hydrated[field_name] = nested_value
+
+                continue
+
+            if field_name in hydrated and not self._is_missing_value(
+                field_name,
+                current_value,
+                field_schema,
+            ):
+                continue
+
+            context_value = None
+
+            for candidate_key in self._context_key_candidates(
+                field_name,
+                context_tokens,
+            ):
+                if candidate_key in lookup:
+                    context_value = lookup[candidate_key]
+                    break
+
+            if context_value is None:
+                continue
+
+            if self._is_missing_value(field_name, context_value, field_schema):
+                continue
+
+            hydrated[field_name] = context_value
+
+        return hydrated
 
     def _is_dummy_value(self, field_name: str, value) -> bool:
         if not isinstance(value, str):
@@ -443,6 +586,19 @@ class TaskExecutor:
             plan.get("resolver_arguments") or {},
             resolver_schema,
         )
+        resolver_arguments = self._apply_context_defaults(
+            resolver_arguments,
+            resolver_schema,
+            self._context_lookup(
+                auth_context,
+                state.get("memory_context", {}),
+            ),
+            self._context_tokens(resolver_tool_name),
+        )
+        resolver_arguments = self._sanitize_arguments(
+            resolver_arguments,
+            resolver_schema,
+        )
         resolver_missing = self._missing_required_fields(
             resolver_arguments,
             resolver_schema,
@@ -516,6 +672,7 @@ class TaskExecutor:
                 task=task,
                 available_tools=self._business_tools(),
                 memory_context=state.get("memory_context", {}),
+                query=state.get("query"),
             )
 
         if self._is_blocked_tool(selected_tool.name):
@@ -554,6 +711,9 @@ class TaskExecutor:
                     "task_id": task.get("task_id"),
                 },
             )
+
+            print("this is select tool name ------->>> ",selected_tool.name)
+            
             generated_arguments = await argument_generator.generate_arguments(
                 query=state.get("query"),
                 tool_name=selected_tool.name,
@@ -569,6 +729,16 @@ class TaskExecutor:
             generated_arguments.get("arguments", {}),
             tool_schema,
         )
+        arguments = self._apply_context_defaults(
+            arguments,
+            tool_schema,
+            self._context_lookup(
+                auth_context,
+                state.get("memory_context", {}),
+            ),
+            self._context_tokens(selected_tool.name),
+        )
+        arguments = self._sanitize_arguments(arguments, tool_schema)
         missing_fields = self._missing_required_fields(arguments, tool_schema)
 
         if missing_fields:
@@ -587,11 +757,7 @@ class TaskExecutor:
             if resolution_result:
                 return resolution_result
 
-        if generated_arguments.get("needs_clarification") or missing_fields:
-            missing_fields = missing_fields or generated_arguments.get(
-                "missing_fields",
-                [],
-            )
+        if missing_fields:
             return self._clarification_result(
                 tool_name=selected_tool.name,
                 missing_fields=missing_fields,
