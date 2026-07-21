@@ -63,7 +63,7 @@ class SupervisorGraph:
         ]:
             return "response"
 
-        return "executor"
+        return "response"
 
     @staticmethod
     def build():
@@ -100,7 +100,6 @@ class SupervisorGraph:
             "executor",
             SupervisorGraph.route_after_executor,
             {
-                "executor": "executor",
                 "human_response": "human_response",
                 "response": "response",
             },

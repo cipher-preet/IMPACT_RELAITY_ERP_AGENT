@@ -338,11 +338,41 @@ class ExecutorNode:
             state["workflow_status"] = "FAILED"
             return
 
+        if total_tasks == 0:
+            state["workflow_status"] = "COMPLETED"
+            return
+
         if total_tasks > 0 and len(state["completed_tasks"]) >= total_tasks:
             state["workflow_status"] = "COMPLETED"
             return
 
-        state["workflow_status"] = "RUNNING"
+        pending_tasks = [
+            task
+            for task in tasks
+            if isinstance(task, dict)
+            and task.get("task_id") not in state["completed_tasks"]
+            and task.get("task_id") not in state["failed_tasks"]
+        ]
+
+        for task in pending_tasks:
+            task_id = task.get("task_id") or "unknown_task"
+            if task_id not in state["failed_tasks"]:
+                state["failed_tasks"].append(task_id)
+
+            state["task_results"][task_id] = {
+                "error": "Task could not run because its dependencies were not satisfied.",
+            }
+
+            state["execution_logs"].append(
+                {
+                    "task_id": task_id,
+                    "status": "FAILED",
+                    "error": "No executable tasks available.",
+                    "timestamp": self._now(),
+                }
+            )
+
+        state["workflow_status"] = "FAILED"
         
         
     # --> This is the Entry Point <<--

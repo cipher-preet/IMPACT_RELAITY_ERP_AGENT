@@ -24,7 +24,7 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x10\x61i_runtime.proto\x12\x13impact.assistant.v1\"\x9f\x01\n\x16\x41ssistantStreamRequest\x12;\n\trun_start\x18\x01 \x01(\x0b\x32&.impact.assistant.v1.AssistantRunStartH\x00\x12=\n\nrun_cancel\x18\x02 \x01(\x0b\x32\'.impact.assistant.v1.AssistantRunCancelH\x00\x42\t\n\x07payload\"\xdf\x01\n\x11\x41ssistantRunStart\x12\x0e\n\x06run_id\x18\x01 \x01(\t\x12\x0f\n\x07user_id\x18\x02 \x01(\t\x12\x12\n\nsession_id\x18\x03 \x01(\t\x12\x11\n\tagency_id\x18\x04 \x01(\t\x12\x14\n\x0cuser_message\x18\x05 \x01(\t\x12\x16\n\x0esummary_memory\x18\x06 \x01(\t\x12!\n\x19pending_task_context_json\x18\x07 \x01(\t\x12\x1c\n\x14recent_messages_json\x18\x08 \x01(\t\x12\x13\n\x0b\x61\x63\x63\x65ss_json\x18\t \x01(\t\"4\n\x12\x41ssistantRunCancel\x12\x0e\n\x06run_id\x18\x01 \x01(\t\x12\x0e\n\x06reason\x18\x02 \x01(\t\"M\n\x17\x41ssistantStreamResponse\x12\x32\n\x05\x65vent\x18\x01 \x01(\x0b\x32#.impact.assistant.v1.AssistantEvent\"K\n\x0e\x41ssistantEvent\x12\x12\n\nevent_type\x18\x01 \x01(\t\x12\x0f\n\x07message\x18\x02 \x01(\t\x12\x14\n\x0cpayload_json\x18\x03 \x01(\t2\x83\x01\n\x12\x41ssistantAiService\x12m\n\x0cRunAssistant\x12+.impact.assistant.v1.AssistantStreamRequest\x1a,.impact.assistant.v1.AssistantStreamResponse(\x01\x30\x01\x62\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x10\x61i_runtime.proto\x12\x13impact.assistant.v1\"\x9f\x01\n\x16\x41ssistantStreamRequest\x12;\n\trun_start\x18\x01 \x01(\x0b\x32&.impact.assistant.v1.AssistantRunStartH\x00\x12=\n\nrun_cancel\x18\x02 \x01(\x0b\x32\'.impact.assistant.v1.AssistantRunCancelH\x00\x42\t\n\x07payload\"\xdf\x01\n\x11\x41ssistantRunStart\x12\x0e\n\x06run_id\x18\x01 \x01(\t\x12\x0f\n\x07user_id\x18\x02 \x01(\t\x12\x12\n\nsession_id\x18\x03 \x01(\t\x12\x11\n\tagency_id\x18\x04 \x01(\t\x12\x14\n\x0cuser_message\x18\x05 \x01(\t\x12\x16\n\x0esummary_memory\x18\x06 \x01(\t\x12!\n\x19pending_task_context_json\x18\x07 \x01(\t\x12\x1c\n\x14recent_messages_json\x18\x08 \x01(\t\x12\x13\n\x0b\x61\x63\x63\x65ss_json\x18\t \x01(\t\"4\n\x12\x41ssistantRunCancel\x12\x0e\n\x06run_id\x18\x01 \x01(\t\x12\x0e\n\x06reason\x18\x02 \x01(\t\"M\n\x17\x41ssistantStreamResponse\x12\x32\n\x05\x65vent\x18\x01 \x01(\x0b\x32#.impact.assistant.v1.AssistantEvent\"c\n\x0e\x41ssistantEvent\x12\x12\n\nevent_type\x18\x01 \x01(\t\x12\x0f\n\x07message\x18\x02 \x01(\t\x12\x14\n\x0cpayload_json\x18\x03 \x01(\t\x12\x16\n\x0esummary_memory\x18\x04 \x01(\t2\x83\x01\n\x12\x41ssistantAiService\x12m\n\x0cRunAssistant\x12+.impact.assistant.v1.AssistantStreamRequest\x1a,.impact.assistant.v1.AssistantStreamResponse(\x01\x30\x01\x62\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -40,7 +40,7 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['_ASSISTANTSTREAMRESPONSE']._serialized_start=483
   _globals['_ASSISTANTSTREAMRESPONSE']._serialized_end=560
   _globals['_ASSISTANTEVENT']._serialized_start=562
-  _globals['_ASSISTANTEVENT']._serialized_end=637
-  _globals['_ASSISTANTAISERVICE']._serialized_start=640
-  _globals['_ASSISTANTAISERVICE']._serialized_end=771
+  _globals['_ASSISTANTEVENT']._serialized_end=661
+  _globals['_ASSISTANTAISERVICE']._serialized_start=664
+  _globals['_ASSISTANTAISERVICE']._serialized_end=795
 # @@protoc_insertion_point(module_scope)

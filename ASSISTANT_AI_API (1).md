@@ -419,6 +419,7 @@ message AssistantEvent {
   string event_type = 1;
   string message = 2;
   string payload_json = 3;
+  string summary_memory = 4;
 }
 ```
 
@@ -924,6 +925,7 @@ message AssistantEvent {
   string event_type = 1;
   string message = 2;
   string payload_json = 3;
+  string summary_memory = 4;
 }
 ```
 

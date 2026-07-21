@@ -1,6 +1,9 @@
 import json
 from typing import Any, Dict, List, Optional
 
+from langchain_core.prompts import ChatPromptTemplate
+from pydantic import BaseModel, Field
+
 from apps.agent_runtime.agents.prompts.formatting.response_message_prompt import (
     response_message_prompt,
 )
@@ -12,6 +15,12 @@ from apps.agent_runtime.state.graph_state import GraphState
 from apps.agent_runtime.runtime.progress_events import emit_progress
 
 
+class SummaryMemoryUpdate(BaseModel):
+    summary_memory: str = Field(
+        description="Compact persistent assistant memory summary."
+    )
+
+
 class ResponseFormatter:
 
     def __init__(self):
@@ -20,6 +29,55 @@ class ResponseFormatter:
             method="function_calling",
         )
         self.message_chain = response_message_prompt | structured_llm
+
+        summary_llm = openai_llm.with_structured_output(
+            SummaryMemoryUpdate,
+            method="function_calling",
+        )
+        self.summary_chain = self._summary_prompt() | summary_llm
+
+    def _summary_prompt(self) -> ChatPromptTemplate:
+        return ChatPromptTemplate.from_messages(
+            [
+                (
+                    "system",
+                    """
+You update compact persistent memory for an enterprise assistant.
+
+Rules:
+1. Preserve useful long-term context from the existing summary.
+2. Add important facts from recent messages, the latest user message, and the assistant response.
+3. Keep unresolved follow-up questions, pending confirmations, selected entities, user preferences, and active workflow context.
+4. Do not store secrets, auth tokens, raw IDs unless needed to continue a pending workflow, or unnecessary transient progress details.
+5. Keep the summary concise and factual. Maximum 1200 characters.
+6. If there is nothing useful to remember, return the existing summary or an empty string.
+Return structured output only.
+                    """,
+                ),
+                (
+                    "human",
+                    """
+Existing Summary Memory:
+{summary_memory}
+
+Recent Messages:
+{recent_messages}
+
+Latest User Message:
+{latest_user_message}
+
+Assistant Response:
+{assistant_response}
+
+Event Type:
+{event_type}
+
+Workflow Status:
+{workflow_status}
+                    """,
+                ),
+            ]
+        )
 
     async def run(self, state: GraphState) -> GraphState:
         emit_progress(
@@ -533,13 +591,119 @@ class ResponseFormatter:
             payload=payload,
         )
         final_message = dynamic_message or base_message
+        summary_memory = await self._build_summary_memory(
+            state=state,
+            event_type=event_type,
+            assistant_response=final_message,
+        )
+
+        if summary_memory:
+            payload["summary_memory"] = summary_memory
+
         payload["message"] = final_message
 
         return {
             "event_type": event_type,
             "message": final_message,
             "payload_json": json.dumps(payload, default=str),
+            "summary_memory": summary_memory,
         }
+
+    async def _build_summary_memory(
+        self,
+        state: GraphState,
+        event_type: str,
+        assistant_response: str,
+    ) -> str:
+
+        memory_context = state.get("memory_context") or {}
+        existing_summary = str(memory_context.get("summary_memory") or "").strip()
+        recent_messages = memory_context.get("recent_messages") or []
+        latest_user_message = (
+            memory_context.get("user_message")
+            or state.get("query")
+            or ""
+        )
+
+        try:
+            response = await self.summary_chain.ainvoke(
+                {
+                    "summary_memory": existing_summary,
+                    "recent_messages": self._safe_json(
+                        recent_messages,
+                        max_length=5000,
+                    ),
+                    "latest_user_message": str(latest_user_message or ""),
+                    "assistant_response": str(assistant_response or ""),
+                    "event_type": event_type,
+                    "workflow_status": state.get("workflow_status", ""),
+                }
+            )
+
+            summary_memory = str(response.summary_memory or "").strip()
+
+            if summary_memory:
+                return summary_memory[:1200]
+
+        except Exception as exc:
+            print(f"Summary memory generation failed: {exc}")
+
+        return self._fallback_summary_memory(
+            existing_summary=existing_summary,
+            recent_messages=recent_messages,
+            latest_user_message=str(latest_user_message or ""),
+            assistant_response=str(assistant_response or ""),
+        )
+
+    def _fallback_summary_memory(
+        self,
+        existing_summary: str,
+        recent_messages: Any,
+        latest_user_message: str,
+        assistant_response: str,
+    ) -> str:
+
+        parts = []
+
+        if existing_summary:
+            parts.append(existing_summary)
+
+        compact_messages = self._compact_recent_messages(recent_messages)
+
+        if compact_messages:
+            parts.append(f"Recent conversation: {compact_messages}")
+
+        latest_user_message = latest_user_message.strip()
+        assistant_response = assistant_response.strip()
+
+        if latest_user_message:
+            parts.append(f"Latest user message: {latest_user_message}")
+
+        if assistant_response:
+            parts.append(f"Latest assistant response: {assistant_response}")
+
+        return " ".join(parts).strip()[:1200]
+
+    def _compact_recent_messages(self, recent_messages: Any) -> str:
+
+        if not isinstance(recent_messages, list):
+            return ""
+
+        compact = []
+
+        for item in recent_messages[-6:]:
+            if not isinstance(item, dict):
+                continue
+
+            sender = str(item.get("senderType") or "unknown").strip()
+            message = str(item.get("message") or "").strip()
+
+            if not message:
+                continue
+
+            compact.append(f"{sender}: {message}")
+
+        return " | ".join(compact)
 
     def _extract_payload_message(self, payload: Dict[str, Any]) -> Optional[str]:
 

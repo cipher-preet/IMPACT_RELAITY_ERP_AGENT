@@ -174,12 +174,26 @@ class AssistantAiService(ai_runtime_pb2_grpc.AssistantAiServiceServicer):
                     if event_type == "__final__":
                         result = event.get("payload") or {}
                         final_response = result.get("final_response") or {}
+                        grpc_response_payload = {
+                            "event_type": final_response.get("event_type"),
+                            "message": final_response.get("message"),
+                            "payload_json": final_response.get("payload_json"),
+                            "summary_memory": final_response.get("summary_memory"),
+                        }
+
+                        print(
+                            "Sending final gRPC AssistantEvent:",
+                            json.dumps(grpc_response_payload, default=str),
+                        )
 
                         yield ai_runtime_pb2.AssistantStreamResponse(
                             event=ai_runtime_pb2.AssistantEvent(
-                                event_type=final_response.get("event_type"),
-                                message=final_response.get("message"),
-                                payload_json=final_response.get("payload_json"),
+                                event_type=grpc_response_payload.get("event_type"),
+                                message=grpc_response_payload.get("message"),
+                                payload_json=grpc_response_payload.get("payload_json"),
+                                summary_memory=grpc_response_payload.get(
+                                    "summary_memory"
+                                ),
                             )
                         )
                         break
