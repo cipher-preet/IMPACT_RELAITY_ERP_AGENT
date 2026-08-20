@@ -343,18 +343,47 @@ Workflow Status:
                 )
 
             if ui.get("type") == "options":
+                candidates = ui.get("items", [])
+
                 return await self._event(
                     state,
                     normalized,
                     "follow_up_question",
-                    f"I found multiple matching {ui.get('title', 'results')}. Which one do you mean?",
+                    self._options_question(ui.get("title", "results"), candidates),
                     {
                         "task_id": task_id,
-                        "candidates": ui.get("items", []),
+                        "candidates": candidates,
                     },
                 )
 
         return None
+
+    def _options_question(self, title: str, candidates: List[Dict[str, Any]]) -> str:
+        readable_title = str(title or "results").replace("_", " ")
+        labels = []
+
+        for index, candidate in enumerate(candidates[:8], start=1):
+            if not isinstance(candidate, dict):
+                continue
+
+            label = (
+                candidate.get("label")
+                or candidate.get("name")
+                or candidate.get("title")
+                or candidate.get("email")
+                or candidate.get("id")
+            )
+
+            if label:
+                labels.append(f"{index}. {label}")
+
+        if labels:
+            return (
+                f"I found multiple matching {readable_title}. "
+                f"Please reply with the number or exact name: {'; '.join(labels)}"
+            )
+
+        return f"I found multiple matching {readable_title}. Please reply with the number or exact name."
 
     def _clean_waiting_payload(self, human_input: Dict[str, Any]) -> Dict[str, Any]:
         data = human_input.get("data")

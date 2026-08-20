@@ -22,6 +22,8 @@ Rules:
 - Use both pending_task_context and recent_messages to understand what the user is replying to.
 - If pending_task_context is empty, use recent_messages to determine whether latest_user_message is answering the previous assistant question.
 - If the latest user message resolves the pending task, return can_resume=true.
+- If latest_user_message is a new standalone question or command unrelated to pending_task_context, return can_resume=false and needs_user_input=false so the main intent flow can handle it.
+- Do not ask the same pending clarification again for a fresh user question.
 - If latest_user_message explicitly names a field or supplies a bare value after the assistant asked for a field, treat it as that field value for the original operation.
 - Do not reinterpret that field value as a different entity search or candidate-selection task unless the user explicitly chooses a candidate by id, ordinal, label, or says they mean one of the candidates.
 - If user says "first one", "second one", "yes", "no", "this one", infer only if the pending context/history makes it clear.

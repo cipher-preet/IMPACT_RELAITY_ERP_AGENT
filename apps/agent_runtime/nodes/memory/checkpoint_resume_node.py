@@ -214,6 +214,419 @@ class CheckpointResumeNode:
             or "approval" in str(resume_type or "").lower()
         )
 
+    def _is_positive_or_negative_reply(self, message: str) -> bool:
+        normalized = str(message or "").strip().lower()
+
+        return normalized in {
+            "yes",
+            "y",
+            "yeah",
+            "yep",
+            "ok",
+            "okay",
+            "sure",
+            "confirm",
+            "confirmed",
+            "approve",
+            "approved",
+            "proceed",
+            "continue",
+            "no",
+            "n",
+            "nope",
+            "cancel",
+            "stop",
+            "don't",
+            "do not",
+        }
+
+    def _pending_missing_fields(
+        self,
+        pending_tool_context: Optional[Dict[str, Any]],
+    ) -> list:
+        if not pending_tool_context:
+            return []
+
+        return [
+            str(field)
+            for field in pending_tool_context.get("missing_fields") or []
+            if str(field or "").strip()
+        ]
+
+    def _mentions_missing_field(
+        self,
+        message: str,
+        pending_tool_context: Optional[Dict[str, Any]],
+    ) -> bool:
+        normalized_message = str(message or "").lower()
+
+        for field_name in self._pending_missing_fields(pending_tool_context):
+            readable = str(field_name).replace("_", " ").replace(".", " ").lower()
+            compact = self._context_key(field_name)
+
+            if readable and readable in normalized_message:
+                return True
+
+            if compact and compact in self._context_key(normalized_message):
+                return True
+
+        return False
+
+    def _looks_like_new_request(
+        self,
+        message: str,
+        pending_tool_context: Optional[Dict[str, Any]],
+    ) -> bool:
+        normalized = " ".join(str(message or "").strip().lower().split())
+
+        if not normalized:
+            return False
+
+        if self._is_positive_or_negative_reply(normalized):
+            return False
+
+        if self._mentions_missing_field(normalized, pending_tool_context):
+            return False
+
+        words = normalized.rstrip("?").split()
+
+        if len(words) <= 3 and "?" not in normalized:
+            return False
+
+        first_word = words[0] if words else ""
+        first_two = " ".join(words[:2])
+
+        request_starters = {
+            "what",
+            "who",
+            "when",
+            "where",
+            "why",
+            "how",
+            "list",
+            "show",
+            "get",
+            "find",
+            "search",
+            "create",
+            "add",
+            "update",
+            "delete",
+            "remove",
+            "send",
+            "call",
+            "schedule",
+            "book",
+            "tell",
+            "give",
+            "can",
+            "could",
+            "would",
+            "do",
+            "does",
+            "is",
+            "are",
+        }
+
+        polite_starters = {
+            "please list",
+            "please show",
+            "please get",
+            "please find",
+            "please search",
+            "please create",
+            "please add",
+            "please update",
+            "please delete",
+            "please send",
+        }
+
+        return (
+            "?" in normalized
+            or first_word in request_starters
+            or first_two in polite_starters
+        )
+
+    def _ignore_pending_context(
+        self,
+        state: GraphState,
+        reason: str,
+    ) -> GraphState:
+        state["resume_context"] = {
+            "can_resume": False,
+            "resume_type": "ignored_stale_context",
+            "reason": reason,
+            "pending_task_context": None,
+        }
+        state["workflow_status"] = "RUNNING"
+        state["waiting_for_user_input"] = False
+        state["pending_human_input"] = None
+        state.setdefault("execution_logs", []).append(
+            {
+                "node": "CheckpointResumeNode",
+                "status": "IGNORED_STALE_PENDING_CONTEXT",
+                "reason": reason,
+            }
+        )
+
+        return state
+
+    def _extract_candidates(self, value: Any) -> list:
+        if isinstance(value, dict):
+            for key in (
+                "candidates",
+                "options",
+                "items",
+                "results",
+                "boards",
+                "records",
+                "data",
+            ):
+                child = value.get(key)
+
+                if isinstance(child, list) and child:
+                    dict_items = [item for item in child if isinstance(item, dict)]
+
+                    if dict_items:
+                        return dict_items
+
+            for child in value.values():
+                found = self._extract_candidates(child)
+
+                if found:
+                    return found
+
+        if isinstance(value, list):
+            dict_items = [item for item in value if isinstance(item, dict)]
+
+            if dict_items:
+                return dict_items
+
+            for child in value:
+                found = self._extract_candidates(child)
+
+                if found:
+                    return found
+
+        return []
+
+    def _candidate_data(self, candidate: Dict[str, Any]) -> Dict[str, Any]:
+        metadata = candidate.get("metadata")
+
+        if isinstance(metadata, dict):
+            data = dict(metadata)
+        else:
+            data = dict(candidate)
+
+        for field in ("id", "type", "label", "name", "title", "email", "confidence"):
+            if field in candidate and field not in data:
+                data[field] = candidate[field]
+
+        return data
+
+    def _candidate_values(self, candidate: Dict[str, Any]) -> list:
+        data = self._candidate_data(candidate)
+        values = []
+
+        for key in ("id", "label", "name", "title", "email", "value"):
+            value = data.get(key)
+
+            if value not in (None, ""):
+                values.append(str(value))
+
+        return values
+
+    def _selected_candidate_from_payload(self, candidates: list) -> Optional[Dict[str, Any]]:
+        for candidate in candidates:
+            if not isinstance(candidate, dict):
+                continue
+
+            if candidate.get("selected") is True or candidate.get("isSelected") is True:
+                return self._candidate_data(candidate)
+
+            metadata = candidate.get("metadata")
+
+            if isinstance(metadata, dict) and (
+                metadata.get("selected") is True or metadata.get("isSelected") is True
+            ):
+                return self._candidate_data(candidate)
+
+        return None
+
+    def _selected_candidate_from_context(self, value: Any) -> Optional[Dict[str, Any]]:
+        if isinstance(value, dict):
+            for key in (
+                "selected_candidate",
+                "selectedCandidate",
+                "chosen_candidate",
+                "chosenCandidate",
+                "current_candidate",
+                "currentCandidate",
+            ):
+                candidate = value.get(key)
+
+                if isinstance(candidate, dict):
+                    return self._candidate_data(candidate)
+
+            for child in value.values():
+                found = self._selected_candidate_from_context(child)
+
+                if found:
+                    return found
+
+        if isinstance(value, list):
+            for child in value:
+                found = self._selected_candidate_from_context(child)
+
+                if found:
+                    return found
+
+        return None
+
+    def _ordinal_selection_index(self, message: str) -> Optional[int]:
+        normalized = " ".join(str(message or "").strip().lower().split())
+
+        ordinal_words = {
+            "first": 0,
+            "1st": 0,
+            "one": 0,
+            "second": 1,
+            "2nd": 1,
+            "two": 1,
+            "third": 2,
+            "3rd": 2,
+            "three": 2,
+            "fourth": 3,
+            "4th": 3,
+            "four": 3,
+            "fifth": 4,
+            "5th": 4,
+            "five": 4,
+        }
+
+        number_match = re.search(
+            r"(?:^|\b)(?:option|choice|number|#)?\s*([1-9]\d*)(?:\b|$)",
+            normalized,
+        )
+
+        if number_match:
+            return int(number_match.group(1)) - 1
+
+        for word, index in ordinal_words.items():
+            if re.search(rf"\b{re.escape(word)}\b", normalized):
+                return index
+
+        return None
+
+    def _is_vague_selection_reply(self, message: str) -> bool:
+        normalized = " ".join(str(message or "").strip().lower().split())
+
+        return normalized in {
+            "this",
+            "this one",
+            "that",
+            "that one",
+            "same",
+            "same one",
+            "it",
+            "yes this",
+            "yes this one",
+        }
+
+    def _match_candidate_selection(
+        self,
+        latest_user_message: str,
+        candidates: list,
+    ) -> Optional[Dict[str, Any]]:
+        selected = self._selected_candidate_from_payload(candidates)
+
+        if selected:
+            return selected
+
+        index = self._ordinal_selection_index(latest_user_message)
+
+        if index is not None and 0 <= index < len(candidates):
+            return self._candidate_data(candidates[index])
+
+        normalized_message = str(latest_user_message or "").strip().lower()
+
+        if not normalized_message:
+            return None
+
+        exact_matches = []
+        partial_matches = []
+
+        for candidate in candidates:
+            if not isinstance(candidate, dict):
+                continue
+
+            values = [
+                str(value).strip().lower()
+                for value in self._candidate_values(candidate)
+                if str(value).strip()
+            ]
+
+            if normalized_message in values:
+                exact_matches.append(candidate)
+                continue
+
+            if len(normalized_message) >= 3 and any(
+                normalized_message in value for value in values
+            ):
+                partial_matches.append(candidate)
+
+        matches = exact_matches or partial_matches
+
+        if len(matches) == 1:
+            return self._candidate_data(matches[0])
+
+        return None
+
+    def _candidate_labels(self, candidates: list) -> list:
+        labels = []
+
+        for index, candidate in enumerate(candidates[:8], start=1):
+            values = self._candidate_values(candidate)
+            label = values[0] if values else f"Option {index}"
+            labels.append(f"{index}. {label}")
+
+        return labels
+
+    def _ask_for_candidate_selection(
+        self,
+        state: GraphState,
+        candidates: list,
+    ) -> GraphState:
+        labels = self._candidate_labels(candidates)
+        if labels:
+            message = "Please reply with the number or exact name: " + "; ".join(labels)
+        else:
+            message = "Please reply with the number or exact name."
+
+        state["resume_context"] = {
+            "can_resume": False,
+            "resume_type": "selection",
+            "reason": "Candidate selection was ambiguous.",
+        }
+        state["waiting_for_user_input"] = True
+        state["workflow_status"] = "WAITING_FOR_USER"
+        state["pending_human_input"] = {
+            "type": "OPTION_SELECTION",
+            "message": message,
+            "data": {
+                "candidates": candidates,
+                "selection_required": True,
+            },
+        }
+        state.setdefault("execution_logs", []).append(
+            {
+                "node": "CheckpointResumeNode",
+                "status": "WAITING_FOR_CANDIDATE_SELECTION",
+            }
+        )
+
+        return state
+
     def _clean_field_value(self, field_name: str, message: str) -> str:
         value = str(message or "").strip()
 
@@ -675,21 +1088,49 @@ class CheckpointResumeNode:
         if pending_task_context is None:
             pending_task_context = {}
 
-        if has_pending_task_context and not pending_tool_context:
-            state["resume_context"] = {
-                "can_resume": False,
-                "resume_type": "ignored_stale_context",
-                "reason": "Pending context did not contain an executable tool call.",
-                "pending_task_context": None,
-            }
-            state["workflow_status"] = "RUNNING"
-            state.setdefault("execution_logs", []).append(
-                {
-                    "node": "CheckpointResumeNode",
-                    "status": "IGNORED_STALE_PENDING_CONTEXT",
-                }
+        pending_candidates = self._extract_candidates(pending_task_context)
+
+        if pending_candidates:
+            if self._looks_like_new_request(latest_user_message, pending_tool_context):
+                return self._ignore_pending_context(
+                    state,
+                    "Latest user message looks like a new request, not a candidate selection.",
+                )
+
+            selected_candidate = self._selected_candidate_from_context(
+                pending_task_context
+            ) or self._match_candidate_selection(
+                latest_user_message,
+                pending_candidates,
             )
-            return state
+
+            if selected_candidate:
+                return self._apply_resolved_payload_result(
+                    state=state,
+                    task_id="resolved_selection",
+                    selected_data=selected_candidate,
+                )
+
+            if self._is_vague_selection_reply(latest_user_message):
+                return self._ask_for_candidate_selection(
+                    state=state,
+                    candidates=pending_candidates,
+                )
+
+        if has_pending_task_context and not pending_tool_context:
+            return self._ignore_pending_context(
+                state,
+                "Pending context did not contain an executable tool call.",
+            )
+
+        if pending_tool_context and self._looks_like_new_request(
+            latest_user_message,
+            pending_tool_context,
+        ):
+            return self._ignore_pending_context(
+                state,
+                "Latest user message looks like a new request, not a reply to pending context.",
+            )
 
         if (
             pending_tool_context

@@ -87,7 +87,7 @@ class AssistantAiService(ai_runtime_pb2_grpc.AssistantAiServiceServicer):
                 access = safe_json_loads(run.access_json, {})
                 recent_messages = safe_json_loads(run.recent_messages_json, [])
                 pending_task_context = safe_json_loads(
-                    run.pending_task_context_json, {}
+                    run.pending_task_context_json, None
                 )
 
                 auth_context = {
@@ -97,7 +97,7 @@ class AssistantAiService(ai_runtime_pb2_grpc.AssistantAiServiceServicer):
                     "session_id": run.session_id,
                     "user_message": query,
                     "summary_memory": run.summary_memory or "",
-                    "pending_task_context_json": json.dumps(pending_task_context or {}),
+                    "pending_task_context_json": json.dumps(pending_task_context),
                     "recent_messages_json": json.dumps(recent_messages or []),
                     "access_json": json.dumps(access or {}),
                 }
