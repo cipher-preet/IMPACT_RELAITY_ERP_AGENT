@@ -352,6 +352,7 @@ class CheckpointResumeNode:
         state: GraphState,
         reason: str,
     ) -> GraphState:
+        self._clear_pending_memory_context(state)
         state["resume_context"] = {
             "can_resume": False,
             "resume_type": "ignored_stale_context",
@@ -370,6 +371,11 @@ class CheckpointResumeNode:
         )
 
         return state
+
+    def _clear_pending_memory_context(self, state: GraphState) -> None:
+        memory_context = dict(state.get("memory_context") or {})
+        memory_context["pending_task_context"] = None
+        state["memory_context"] = memory_context
 
     def _extract_candidates(self, value: Any) -> list:
         if isinstance(value, dict):
@@ -489,19 +495,14 @@ class CheckpointResumeNode:
         ordinal_words = {
             "first": 0,
             "1st": 0,
-            "one": 0,
             "second": 1,
             "2nd": 1,
-            "two": 1,
             "third": 2,
             "3rd": 2,
-            "three": 2,
             "fourth": 3,
             "4th": 3,
-            "four": 3,
             "fifth": 4,
             "5th": 4,
-            "five": 4,
         }
 
         number_match = re.search(
@@ -1051,8 +1052,28 @@ class CheckpointResumeNode:
 
         return state
 
-# --> this is the entry point of the checkpointer <--
     async def run(self, state: GraphState) -> GraphState:
+        try:
+            return await self._run(state)
+        except Exception as exc:
+            print(f"Checkpoint resume failed; starting fresh request: {exc}")
+            self._clear_pending_memory_context(state)
+            state["resume_context"] = None
+            state["workflow_status"] = "RUNNING"
+            state["waiting_for_user_input"] = False
+            state["pending_human_input"] = None
+            state.setdefault("execution_logs", []).append(
+                {
+                    "node": "CheckpointResumeNode",
+                    "status": "CHECKPOINT_RESUME_FAILED_FRESH_START",
+                    "error": str(exc),
+                }
+            )
+
+            return state
+
+# --> this is the entry point of the checkpointer <--
+    async def _run(self, state: GraphState) -> GraphState:
         memory = state.get("memory_context") or {}
 
         pending_task_context = memory.get("pending_task_context")

@@ -1,6 +1,7 @@
 from concurrent import futures
 import json
 import os
+import traceback
 import grpc
 import asyncio
 
@@ -151,7 +152,10 @@ class AssistantAiService(ai_runtime_pb2_grpc.AssistantAiServiceServicer):
                             }
                         )
                     except Exception as exc:
-                        print(f"Assistant graph execution failed: {exc}")
+                        print(
+                            "Assistant graph execution failed:",
+                            traceback.format_exc(),
+                        )
                         event_queue.put(
                             {
                                 "event_type": AssistantEventType.RUN_FAILED.value,
@@ -159,6 +163,8 @@ class AssistantAiService(ai_runtime_pb2_grpc.AssistantAiServiceServicer):
                                 "payload": {
                                     "run_id": run.run_id,
                                     "stage": "graph_execution",
+                                    "error": str(exc),
+                                    "error_type": exc.__class__.__name__,
                                     "terminal": True,
                                 },
                             }
