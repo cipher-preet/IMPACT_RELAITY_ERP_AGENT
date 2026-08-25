@@ -649,9 +649,7 @@ Workflow Status:
         existing_summary = str(memory_context.get("summary_memory") or "").strip()
         recent_messages = memory_context.get("recent_messages") or []
         latest_user_message = (
-            memory_context.get("user_message")
-            or state.get("query")
-            or ""
+            memory_context.get("user_message") or state.get("query") or ""
         )
 
         try:
