@@ -1,5 +1,6 @@
 import uuid
 import re
+import logging
 import httpx
 
 from typing import Any
@@ -7,6 +8,8 @@ from typing import Dict
 from typing import Optional
 
 from apps.api_gateway.config.setting import settings
+
+logger = logging.getLogger(__name__)
 
 
 class MCPClient:
@@ -30,11 +33,21 @@ class MCPClient:
 
         async with httpx.AsyncClient(timeout=self.timeout) as client:
 
-            response = await client.post(
-                self.base_url, json=payload, headers=self._headers()
-            )
-
-            response.raise_for_status()
+            try:
+                response = await client.post(
+                    self.base_url, json=payload, headers=self._headers()
+                )
+                response.raise_for_status()
+            except httpx.HTTPStatusError as exc:
+                logger.exception(
+                    "MCP initialize failed status=%s body=%s",
+                    exc.response.status_code,
+                    exc.response.text,
+                )
+                raise
+            except httpx.HTTPError:
+                logger.exception("MCP initialize request failed base_url=%s", self.base_url)
+                raise
 
             return response.json()
 
@@ -44,11 +57,21 @@ class MCPClient:
 
         async with httpx.AsyncClient(timeout=self.timeout) as client:
 
-            response = await client.post(
-                self.base_url, json=payload, headers=self._headers()
-            )
-
-            response.raise_for_status()
+            try:
+                response = await client.post(
+                    self.base_url, json=payload, headers=self._headers()
+                )
+                response.raise_for_status()
+            except httpx.HTTPStatusError as exc:
+                logger.exception(
+                    "MCP list_tools failed status=%s body=%s",
+                    exc.response.status_code,
+                    exc.response.text,
+                )
+                raise
+            except httpx.HTTPError:
+                logger.exception("MCP list_tools request failed base_url=%s", self.base_url)
+                raise
 
             return response.json()
 
@@ -98,12 +121,56 @@ class MCPClient:
 
         async with httpx.AsyncClient(timeout=self.timeout) as client:
 
-            response = await client.post(
-                self.base_url, json=payload, headers=self._headers()
-            )
-            response.raise_for_status()
+            try:
+                logger.info(
+                    "Calling MCP tool tool_name=%s run_id=%s agency_id=%s arguments=%s",
+                    tool_name,
+                    run_id,
+                    agency_id,
+                    arguments,
+                )
+                response = await client.post(
+                    self.base_url, json=payload, headers=self._headers()
+                )
+                response.raise_for_status()
+            except httpx.HTTPStatusError as exc:
+                logger.exception(
+                    "MCP tool call failed tool_name=%s run_id=%s status=%s body=%s",
+                    tool_name,
+                    run_id,
+                    exc.response.status_code,
+                    exc.response.text,
+                )
+                raise
+            except httpx.HTTPError:
+                logger.exception(
+                    "MCP tool call request failed tool_name=%s run_id=%s base_url=%s",
+                    tool_name,
+                    run_id,
+                    self.base_url,
+                )
+                raise
 
-            return response.json()
+            try:
+                result = response.json()
+            except ValueError:
+                logger.exception(
+                    "MCP tool call returned invalid JSON tool_name=%s run_id=%s body=%s",
+                    tool_name,
+                    run_id,
+                    response.text,
+                )
+                raise
+
+            if isinstance(result, dict) and result.get("error"):
+                logger.error(
+                    "MCP tool call returned JSON-RPC error tool_name=%s run_id=%s error=%s",
+                    tool_name,
+                    run_id,
+                    result.get("error"),
+                )
+
+            return result
 
 
 mcp_client = MCPClient(

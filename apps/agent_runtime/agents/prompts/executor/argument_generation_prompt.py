@@ -28,6 +28,9 @@ Rules:
 15. Do not reinterpret a supplied field value as a different entity lookup. If the pending operation needs a name/title/label and the user replies with a person's name, company name, or phrase, use it as the requested field value.
 16. If a required field is an internal ID and the user gave a human-readable name for that entity, do not ask the user for the ID. Leave the ID missing and let the runtime resolve it from context or resolver tools.
 17. If a required field is already present in auth_context, use that value instead of asking the user for it.
+18. The latest user query and current task are the source of truth. Use memory_context only when the latest query is clearly a direct answer to the immediately previous assistant question.
+19. If the latest query asks for a different entity, action, module, list, details, report, or dataset than memory_context, ignore stale pending values from memory_context.
+20. Never fill a required field from an old pending workflow if that field does not belong to the latest task/tool.
 
 If a field named "limit" exists in the schema:
 

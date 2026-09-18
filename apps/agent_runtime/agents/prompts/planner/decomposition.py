@@ -26,6 +26,9 @@ Rules:
 - Preserve logical execution order
 - Detect multi-domain workflows
 - Keep tasks atomic and orchestration-friendly
+- The latest user query is the source of truth.
+- Use memory context only when the latest query is clearly a short answer, confirmation, candidate selection, or missing-field value for the previous assistant question.
+- If the latest query asks for a different entity, module, action, report, list, details, or dataset than the previous pending context, ignore the old pending workflow and plan the new request.
 - Prefer explicit actions over generic tasks
 - If the latest user query is a short answer to the previous assistant question, continue the previous business operation from memory_context.
 - Do not reinterpret a supplied field value as a new lookup/search when the previous assistant message asked for that field.

@@ -1,9 +1,12 @@
 from datetime import datetime
+import logging
 from typing import Any, Dict, List, Optional
 
 from apps.agent_runtime.state.graph_state import GraphState
 from apps.agent_runtime.agents.executor.parallel_executor import ParallelExecutor
 from apps.agent_runtime.agents.executor.execution_supervisor import ExecutionSupervisor
+
+logger = logging.getLogger(__name__)
 
 
 class ExecutorNode:
@@ -97,6 +100,16 @@ class ExecutorNode:
 
         return structured.get("success") is False
 
+    def _is_waiting_result(
+        self,
+        result: Optional[Dict[str, Any]],
+    ) -> bool:
+
+        return self._extract_status(result) in {
+            "requires_input",
+            "requires_confirmation",
+        }
+
     def _result_error(
         self,
         result: Optional[Dict[str, Any]],
@@ -152,6 +165,13 @@ class ExecutorNode:
                 "error": str(error),
                 "timestamp": self._now(),
             }
+        )
+        logger.warning(
+            "Retrying task task_id=%s retry_count=%s max_retries=%s error=%s",
+            task_id,
+            next_retry_count,
+            max_retries,
+            error,
         )
 
         return True
@@ -232,9 +252,32 @@ class ExecutorNode:
 
         task_id = task.get("task_id") or "unknown_task"
         human_loop = task.get("human_loop") or {}
+        structured = self._extract_structured_content(result)
+        status = str(structured.get("status") or "").lower()
+        data = structured.get("data") if isinstance(structured, dict) else None
 
-        input_type = human_loop.get("input_type") or "INPUT"
-        message = human_loop.get("message") or "Please provide input to continue."
+        if status == "requires_confirmation":
+            input_type = human_loop.get("input_type") or "CONFIRMATION"
+            message = (
+                human_loop.get("message")
+                or structured.get("message")
+                or "Please confirm to continue."
+            )
+        else:
+            input_type = human_loop.get("input_type") or "CLARIFICATION"
+            message = (
+                human_loop.get("message")
+                or structured.get("message")
+                or "Please provide input to continue."
+            )
+
+        metadata = {
+            "task": task,
+            "tool_result": result,
+        }
+
+        if isinstance(data, dict):
+            metadata["data"] = data
 
         return {
             "requires_human_input": True,
@@ -245,10 +288,8 @@ class ExecutorNode:
                 "task_id": task_id,
                 "message": message,
                 "options": self._extract_options(result),
-                "metadata": {
-                    "task": task,
-                    "tool_result": result,
-                },
+                "data": data if isinstance(data, dict) else {},
+                "metadata": metadata,
                 "status": "PENDING",
                 "created_at": self._now(),
             },
@@ -329,6 +370,13 @@ class ExecutorNode:
                 "timestamp": self._now(),
             }
         )
+        logger.error(
+            "Task failed task_id=%s task=%s error_type=%s error=%s",
+            task_id,
+            task,
+            error.__class__.__name__,
+            error,
+        )
 
     def _finalize_status(self, state: GraphState) -> None:
         tasks = state.get("workflow_plan", {}).get("tasks") or []
@@ -336,6 +384,12 @@ class ExecutorNode:
 
         if state["failed_tasks"]:
             state["workflow_status"] = "FAILED"
+            logger.error(
+                "Workflow failed failed_tasks=%s execution_logs=%s task_results=%s",
+                state.get("failed_tasks"),
+                state.get("execution_logs"),
+                state.get("task_results"),
+            )
             return
 
         if total_tasks == 0:
@@ -371,8 +425,17 @@ class ExecutorNode:
                     "timestamp": self._now(),
                 }
             )
+            logger.error(
+                "Task could not run because dependencies were not satisfied task_id=%s task=%s",
+                task_id,
+                task,
+            )
 
         state["workflow_status"] = "FAILED"
+        logger.error(
+            "Workflow failed because no executable tasks remained execution_logs=%s",
+            state.get("execution_logs"),
+        )
         
         
     # --> This is the Entry Point <<--
@@ -458,6 +521,18 @@ class ExecutorNode:
                     continue
 
                 if self._is_human_loop_required(task, result):
+                    hitl_result = self._build_hitl_result(
+                        task=task,
+                        result=result,
+                    )
+
+                    return self._apply_human_loop_state(
+                        state=state,
+                        task=task,
+                        hitl_result=hitl_result,
+                    )
+
+                if self._is_waiting_result(result):
                     hitl_result = self._build_hitl_result(
                         task=task,
                         result=result,

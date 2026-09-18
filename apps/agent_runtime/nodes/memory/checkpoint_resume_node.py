@@ -272,27 +272,104 @@ class CheckpointResumeNode:
 
         return False
 
-    def _looks_like_new_request(
+    def _semantic_tokens_from_text(self, value: Any) -> set:
+        stopwords = {
+            "a",
+            "about",
+            "again",
+            "all",
+            "also",
+            "an",
+            "and",
+            "any",
+            "as",
+            "by",
+            "can",
+            "could",
+            "detail",
+            "details",
+            "for",
+            "from",
+            "give",
+            "get",
+            "i",
+            "id",
+            "in",
+            "info",
+            "information",
+            "is",
+            "it",
+            "list",
+            "me",
+            "my",
+            "of",
+            "on",
+            "or",
+            "please",
+            "provide",
+            "search",
+            "show",
+            "that",
+            "the",
+            "this",
+            "to",
+            "want",
+            "with",
+            "you",
+        }
+        tokens = re.split(r"[^a-zA-Z0-9]+", str(value or "").lower())
+
+        return {
+            token[:-1] if len(token) > 3 and token.endswith("s") else token
+            for token in tokens
+            if len(token) > 2 and token not in stopwords
+        }
+
+    def _semantic_tokens_from_value(self, value: Any) -> set:
+        if isinstance(value, dict):
+            tokens = set()
+
+            for key, child in value.items():
+                tokens.update(self._semantic_tokens_from_text(key))
+                tokens.update(self._semantic_tokens_from_value(child))
+
+            return tokens
+
+        if isinstance(value, list):
+            tokens = set()
+
+            for child in value[:10]:
+                tokens.update(self._semantic_tokens_from_value(child))
+
+            return tokens
+
+        if isinstance(value, (str, int, float, bool)):
+            return self._semantic_tokens_from_text(value)
+
+        return set()
+
+    def _pending_context_tokens(
         self,
-        message: str,
         pending_tool_context: Optional[Dict[str, Any]],
-    ) -> bool:
+        pending_task_context: Any = None,
+    ) -> set:
+        tokens = self._semantic_tokens_from_value(pending_task_context)
+
+        if pending_tool_context:
+            tokens.update(self._semantic_tokens_from_value(pending_tool_context))
+            tool_name = pending_tool_context.get("tool_name")
+            tool = tool_registry.get_tool(tool_name) or {}
+            tokens.update(self._semantic_tokens_from_value(tool))
+
+        return tokens
+
+    def _has_request_shape(self, message: str) -> bool:
         normalized = " ".join(str(message or "").strip().lower().split())
 
         if not normalized:
             return False
 
-        if self._is_positive_or_negative_reply(normalized):
-            return False
-
-        if self._mentions_missing_field(normalized, pending_tool_context):
-            return False
-
         words = normalized.rstrip("?").split()
-
-        if len(words) <= 3 and "?" not in normalized:
-            return False
-
         first_word = words[0] if words else ""
         first_two = " ".join(words[:2])
 
@@ -327,7 +404,6 @@ class CheckpointResumeNode:
             "is",
             "are",
         }
-
         polite_starters = {
             "please list",
             "please show",
@@ -340,12 +416,81 @@ class CheckpointResumeNode:
             "please delete",
             "please send",
         }
+        request_markers = {
+            "all",
+            "any",
+            "detail",
+            "details",
+            "info",
+            "information",
+            "list",
+            "report",
+            "summary",
+        }
 
         return (
             "?" in normalized
             or first_word in request_starters
             or first_two in polite_starters
+            or any(marker in words for marker in request_markers)
         )
+
+    def _looks_like_context_shift(
+        self,
+        message: str,
+        pending_tool_context: Optional[Dict[str, Any]],
+        pending_task_context: Any = None,
+    ) -> bool:
+        if not self._has_request_shape(message):
+            return False
+
+        if self._mentions_missing_field(message, pending_tool_context):
+            return False
+
+        latest_tokens = self._semantic_tokens_from_text(message)
+        pending_tokens = self._pending_context_tokens(
+            pending_tool_context,
+            pending_task_context,
+        )
+
+        if not latest_tokens:
+            return False
+
+        if not pending_tokens:
+            return True
+
+        return latest_tokens.isdisjoint(pending_tokens)
+
+    def _looks_like_new_request(
+        self,
+        message: str,
+        pending_tool_context: Optional[Dict[str, Any]],
+        pending_task_context: Any = None,
+    ) -> bool:
+        normalized = " ".join(str(message or "").strip().lower().split())
+
+        if not normalized:
+            return False
+
+        if self._is_positive_or_negative_reply(normalized):
+            return False
+
+        if self._mentions_missing_field(normalized, pending_tool_context):
+            return False
+
+        if self._looks_like_context_shift(
+            normalized,
+            pending_tool_context,
+            pending_task_context,
+        ):
+            return True
+
+        words = normalized.rstrip("?").split()
+
+        if len(words) <= 3 and "?" not in normalized:
+            return False
+
+        return self._has_request_shape(normalized)
 
     def _ignore_pending_context(
         self,
@@ -749,6 +894,11 @@ class CheckpointResumeNode:
         field_name: str,
         tool_name: str = "",
     ) -> bool:
+        path_value = self._get_argument_path(arguments, field_name)
+
+        if path_value not in (None, ""):
+            return True
+
         field_keys = set(
             self._context_key_candidates(
                 field_name,
@@ -764,6 +914,52 @@ class CheckpointResumeNode:
                 return True
 
         return False
+
+    def _get_argument_path(self, arguments: Dict[str, Any], field_path: str) -> Any:
+        if not isinstance(arguments, dict):
+            return None
+
+        if field_path in arguments:
+            return arguments.get(field_path)
+
+        current = arguments
+
+        for part in str(field_path or "").split("."):
+            if not isinstance(current, dict) or part not in current:
+                return None
+
+            current = current.get(part)
+
+        return current
+
+    def _set_argument_path(
+        self,
+        arguments: Dict[str, Any],
+        field_path: str,
+        value: Any,
+    ) -> Dict[str, Any]:
+        if not isinstance(arguments, dict):
+            arguments = {}
+
+        parts = [part for part in str(field_path or "").split(".") if part]
+
+        if not parts:
+            return arguments
+
+        current = arguments
+
+        for part in parts[:-1]:
+            child = current.get(part)
+
+            if not isinstance(child, dict):
+                child = {}
+                current[part] = child
+
+            current = child
+
+        current[parts[-1]] = value
+
+        return arguments
 
     def _hydrate_pending_tool_context_from_auth(
         self,
@@ -869,14 +1065,22 @@ class CheckpointResumeNode:
             return resolved_payload[field_name]
 
         normalized_field = field_name.lower()
+        normalized_leaf_field = normalized_field.rsplit(".", 1)[-1]
 
         for key, value in resolved_payload.items():
             normalized_key = str(key).lower()
+            normalized_leaf_key = normalized_key.rsplit(".", 1)[-1]
 
             if normalized_key == normalized_field:
                 return value
 
+            if normalized_leaf_key == normalized_leaf_field:
+                return value
+
             if normalized_key.endswith(f"_{normalized_field}"):
+                return value
+
+            if normalized_key.endswith(f"_{normalized_leaf_field}"):
                 return value
 
             if normalized_field in normalized_key:
@@ -898,7 +1102,7 @@ class CheckpointResumeNode:
             value = self._value_for_missing_field(field_name, resolved_payload)
 
             if value not in (None, ""):
-                arguments[field_name] = value
+                arguments = self._set_argument_path(arguments, field_name, value)
 
         return arguments
 
@@ -1112,7 +1316,11 @@ class CheckpointResumeNode:
         pending_candidates = self._extract_candidates(pending_task_context)
 
         if pending_candidates:
-            if self._looks_like_new_request(latest_user_message, pending_tool_context):
+            if self._looks_like_new_request(
+                latest_user_message,
+                pending_tool_context,
+                pending_task_context,
+            ):
                 return self._ignore_pending_context(
                     state,
                     "Latest user message looks like a new request, not a candidate selection.",
@@ -1147,6 +1355,7 @@ class CheckpointResumeNode:
         if pending_tool_context and self._looks_like_new_request(
             latest_user_message,
             pending_tool_context,
+            pending_task_context,
         ):
             return self._ignore_pending_context(
                 state,
