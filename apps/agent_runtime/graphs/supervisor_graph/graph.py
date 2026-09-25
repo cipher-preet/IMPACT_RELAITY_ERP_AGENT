@@ -49,6 +49,13 @@ class SupervisorGraph:
         return "intent"
 
     @staticmethod
+    def route_after_intent(state: GraphState) -> str:
+        if state.get("workflow_status") == "DIRECT_RESPONSE":
+            return "response"
+
+        return "planner"
+
+    @staticmethod
     def route_after_executor(state: GraphState) -> str:
         status = state.get("workflow_status")
 
@@ -93,7 +100,14 @@ class SupervisorGraph:
             },
         )
 
-        graph.add_edge("intent", "planner")
+        graph.add_conditional_edges(
+            "intent",
+            SupervisorGraph.route_after_intent,
+            {
+                "planner": "planner",
+                "response": "response",
+            },
+        )
         graph.add_edge("planner", "executor")
 
         graph.add_conditional_edges(

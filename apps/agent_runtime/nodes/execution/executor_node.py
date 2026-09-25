@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Optional
 from apps.agent_runtime.state.graph_state import GraphState
 from apps.agent_runtime.agents.executor.parallel_executor import ParallelExecutor
 from apps.agent_runtime.agents.executor.execution_supervisor import ExecutionSupervisor
+from apps.agent_runtime.nodes.human_in_the_loop.hitl_builder import HITLBuilder
 
 logger = logging.getLogger(__name__)
 
@@ -195,9 +196,20 @@ class ExecutorNode:
 
         execution = task.get("execution") or {}
         human_loop = task.get("human_loop") or {}
+        action = str(task.get("action") or "").upper()
+        module = str(task.get("module") or "").upper()
 
         mode = str(execution.get("mode") or "").upper()
         trigger = str(human_loop.get("trigger") or "").upper()
+
+        if (
+            "CLARIFICATION" in action
+            or "CLARIFY" in action
+            or "APPROVAL" in action
+            or "CONFIRMATION" in action
+            or module in {"CLARIFICATION", "APPROVAL", "HUMAN_APPROVAL"}
+        ):
+            return True
 
         return mode in {
             "HUMAN_INPUT",
@@ -249,6 +261,9 @@ class ExecutorNode:
         task: Dict[str, Any],
         result: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
+
+        if result is None and not task.get("human_loop"):
+            return HITLBuilder.build_from_task(task)
 
         task_id = task.get("task_id") or "unknown_task"
         human_loop = task.get("human_loop") or {}

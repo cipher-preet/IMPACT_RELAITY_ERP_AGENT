@@ -32,10 +32,20 @@ class IntentNode:
 
         return message
 
+    def _is_general_intent(self, intent) -> bool:
+        domain = self._readable(getattr(intent, "domain", ""))
+        module = self._readable(getattr(intent, "module", ""))
+        action = self._readable(getattr(intent, "action", ""))
+
+        return domain == "general" and module == "general" and action == "general"
+
     async def run(self, state: GraphState) -> GraphState:
 
         intent = await runtime_manager.intent_classifier.classify(state["query"])
         state["intent"] = intent
+
+        if self._is_general_intent(intent):
+            state["workflow_status"] = "DIRECT_RESPONSE"
 
         emit_progress(
             state,

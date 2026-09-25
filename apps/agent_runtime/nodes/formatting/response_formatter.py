@@ -100,6 +100,15 @@ Workflow Status:
 
         workflow_status = state.get("workflow_status")
 
+        if workflow_status == "DIRECT_RESPONSE":
+            return await self._event(
+                state,
+                normalized,
+                "final_message",
+                "Respond to the user's message directly.",
+                {"mode": "general_conversation"},
+            )
+
         if workflow_status == "FAILED":
             return await self._event(
                 state,
